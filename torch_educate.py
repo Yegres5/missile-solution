@@ -45,14 +45,19 @@ class DQNAgent(nn.Module):
         self.epsilon = epsilon
         self.n_actions = n_actions
         self.state_shape = state_shape
+        self.const_neurons = 1248
 
-        self.dense1 = nn.Linear(in_features=state_shape[1], out_features=1248)
+        self.dense1 = nn.Linear(in_features=state_shape[1], out_features=self.const_neurons)
         self.relu1 = nn.LeakyReLU()
-        self.dense2 = nn.Linear(in_features=1248, out_features=1248)
+        self.dense2 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
         self.relu2 = nn.LeakyReLU()
-        # self.dense3 = nn.Linear(in_features=4096, out_features=1024)
-        # self.relu3 = nn.LeakyReLU()
-        self.dense4 = nn.Linear(in_features=1248, out_features=self.n_actions)
+        self.dense3 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        self.relu3 = nn.LeakyReLU()
+        self.dense4 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        self.relu4 = nn.LeakyReLU()
+        self.dense5 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        self.relu5 = nn.LeakyReLU()
+        self.dense6 = nn.Linear(in_features=self.const_neurons, out_features=self.n_actions)
 
     def forward(self, state_t):
         """
@@ -63,9 +68,13 @@ class DQNAgent(nn.Module):
         qvalues = self.relu1(qvalues)
         qvalues = self.dense2(qvalues)
         qvalues = self.relu2(qvalues)
-        # qvalues = self.dense3(qvalues)
-        # qvalues = self.relu3(qvalues)
+        qvalues = self.dense3(qvalues)
+        qvalues = self.relu3(qvalues)
         qvalues = self.dense4(qvalues)
+        qvalues = self.relu4(qvalues)
+        qvalues = self.dense5(qvalues)
+        qvalues = self.relu5(qvalues)
+        qvalues = self.dense6(qvalues)
 
         assert qvalues.requires_grad, "qvalues must be a torch tensor with grad"
         # assert len(
@@ -89,18 +98,18 @@ class DQNAgent(nn.Module):
 
         random_actions = np.random.choice(n_actions, size=batch_size)
         # FIXME: max -> min
-        best_actions = qvalues.argmin(axis=-1)
+        best_actions = qvalues.argmax(axis=-1)
 
         should_explore = np.random.choice(
             [0, 1], batch_size, p=[1 - epsilon, epsilon])
         return np.where(should_explore, random_actions, best_actions)
 
 
-def evaluate(env, agent, n_games=1, greedy=False, t_max=10000):
+def evaluate(env, agent, n_games=1, greedy=False, t_max=10000, **init_params):
     """ Plays n_games full games. If greedy, picks actions as argmax(qvalues). Returns mean reward. """
     rewards = []
     for _ in range(n_games):
-        s = env.reset()
+        s = env.reset(**init_params)
         reward = 0
         for _ in range(t_max):
             qvalues = agent.get_qvalues([s])
@@ -125,7 +134,8 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
     :returns: return sum of rewards over time and the state in which the env stays
     """
     # s = env.framebuffer add buffer
-    s = env.reset(**initial_state)
+    # s = env.reset(**initial_state)
+    s = env.observation(env.get_obs)
     reward = 0
 
     # Play the game for n_steps as per instructions above
@@ -135,22 +145,22 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
             env.wrap.rocket.grav_compensate()
             overload = env.wrap.rocket.proportionalCoefficients(k_z=2, k_y=2)
             possible = env.wrap.findClosestFromLegal(overload)
-            action = env.wrap.overloadsToNumber([possible])
+            action = env.wrap.overloadsToNumber([possible])[0]
         else:
             qvalues = agent.get_qvalues([s])
             action = agent.sample_actions(qvalues=qvalues)[0]
 
-        _s, r, done, info = env.step(action[0])
+        _s, r, done, info = env.step(action)
 
-        if done and not info["Destroyed"]:
-            r += 200
+        # if done and not info["Destroyed"]:
+        #     r += 200
 
         reward += r
         exp_replay.add(s, action, r, _s, done)
         s = _s
 
         if done:
-            s = env.reset()
+            s = env.reset(**initial_state)
 
     return reward, s
 
@@ -186,7 +196,7 @@ def compute_td_loss(states, actions, rewards, next_states, is_done,
 
     # compute V*(next_states) using predicted next q-values
     # FIXME: maybe not working max -> min
-    next_state_values, _ = torch.min(predicted_next_qvalues, dim=1)
+    next_state_values, _ = torch.max(predicted_next_qvalues, dim=1)
 
     assert next_state_values.dim(
     ) == 1 and next_state_values.shape[0] == states.shape[0], "must predict one value per state"
