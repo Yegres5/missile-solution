@@ -4,6 +4,7 @@ from gym.spaces import Box
 import numpy as np
 import torch
 import torch.nn as nn
+from replay_buffer import ReplayBuffer
 
 
 class PreprocessiObs(ObservationWrapper):
@@ -11,21 +12,52 @@ class PreprocessiObs(ObservationWrapper):
         """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
         ObservationWrapper.__init__(self, env)
 
-        self.angle_values = [1, 6]
-        self.coordinates_values = [0, 5]
+        self.angle_values = [3, 4, 5, 19, 20, 21]
+        self.coordinates_values = [0, 1, 2, 12, 13, 14]  # rocket + target coordinates
+        self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
+        self.speed = [6, 18]  # 15, 16, 17 target speed projections
+        self.distance = [22]
+        self.for_overload = [23, 24]
+        self.min_coor = -5000
+        self.max_coor = 20000
         self.state_size = (1, self.observation(self.env.get_obs).shape[0])
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=self.state_size)
         self.framebuffer = np.zeros(self.state_size[1], 'float32')
 
+    # np.hstack([np.copy(self._coord),
+    #            np.copy(self._euler),
+    #            self._speed,
+    #            np.copy(self._overload),
+    #            np.copy(self._current_overloads),
+    #            np.copy(self.dataForNzPN())])
 
     def observation(self, obs):
         new_obs = np.empty(0)
         for i, elem in enumerate(obs):
             if i in self.coordinates_values:
-                elem = np.round(elem, -1)
-
-            if i in self.angle_values:
-                elem = np.array(list(map(self.transform_to_trigonometry, elem))).reshape(-1)
+                continue
+                elem = np.round(elem, -2)
+                # elem = np.round((elem - self.min_coor)/(self.max_coor - self.min_coor), 5)
+            elif i in self.overloads:
+                continue
+                elem = np.round(elem, 2)
+            elif i in self.angle_values:
+                continue
+                elem = np.round(np.array(list(map(self.transform_to_trigonometry, elem))).reshape(-1), 4)
+            elif i in self.speed:
+                continue
+                elem = np.round(elem)
+                # elem = elem / 100
+            elif i in self.distance:
+                continue
+                elem = np.round(elem, -2)
+            elif i in self.for_overload:
+                if i == 24:
+                    elem = np.round(elem, 2)
+                else:
+                    continue
+            else:
+                continue
 
             new_obs = np.hstack((new_obs, elem))  # Add embedings for manouver
 
@@ -45,7 +77,8 @@ class DQNAgent(nn.Module):
         self.epsilon = epsilon
         self.n_actions = n_actions
         self.state_shape = state_shape
-        self.const_neurons = 1248
+        self.const_neurons = int(np.ceil(2 / 3 * state_shape[1] + self.n_actions))
+        print("number of neurons = ", self.const_neurons)
 
         self.dense1 = nn.Linear(in_features=state_shape[1], out_features=self.const_neurons)
         self.relu1 = nn.LeakyReLU()
@@ -67,13 +100,14 @@ class DQNAgent(nn.Module):
         qvalues = self.dense1(state_t)
         qvalues = self.relu1(qvalues)
         qvalues = self.dense2(qvalues)
-        qvalues = self.relu2(qvalues)
-        qvalues = self.dense3(qvalues)
-        qvalues = self.relu3(qvalues)
-        qvalues = self.dense4(qvalues)
-        qvalues = self.relu4(qvalues)
-        qvalues = self.dense5(qvalues)
-        qvalues = self.relu5(qvalues)
+        # qvalues = self.relu2(qvalues)
+        # qvalues = self.dense3(qvalues)
+        # qvalues = self.relu3(qvalues)
+        # qvalues = self.dense4(qvalues)
+        # qvalues = self.relu4(qvalues)
+        # qvalues = self.dense5(qvalues)
+        # qvalues = self.relu5(qvalues)
+
         qvalues = self.dense6(qvalues)
 
         assert qvalues.requires_grad, "qvalues must be a torch tensor with grad"
@@ -113,7 +147,7 @@ def evaluate(env, agent, n_games=1, greedy=False, t_max=10000, **init_params):
         reward = 0
         for _ in range(t_max):
             qvalues = agent.get_qvalues([s])
-            action = qvalues.argmin(axis=-1)[0] if greedy else agent.sample_actions(qvalues)[0]
+            action = qvalues.argmax(axis=-1)[0] if greedy else agent.sample_actions(qvalues)[0]  # FIXME: max -> min
             s, r, done, _ = env.step(action)
             reward += r
             if done:
@@ -123,7 +157,7 @@ def evaluate(env, agent, n_games=1, greedy=False, t_max=10000, **init_params):
     return np.mean(rewards)
 
 
-def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=False):
+def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=False, prob_exp_random=0):
     """
     Play the game for exactly n steps, record every (s,a,r,s', done) to replay buffer.
     Whenever game ends, add record with done=True and reset the game.
@@ -137,32 +171,63 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
     # s = env.reset(**initial_state)
     s = env.observation(env.get_obs)
     reward = 0
+    # temp_replay = ReplayBuffer(10**3)
+    over = []
 
     # Play the game for n_steps as per instructions above
-    for _ in range(n_steps):
-
+    for i in range(n_steps):
         if expert:
             env.wrap.rocket.grav_compensate()
             overload = env.wrap.rocket.proportionalCoefficients(k_z=2, k_y=2)
+            over.append(overload)
             possible = env.wrap.findClosestFromLegal(overload)
             action = env.wrap.overloadsToNumber([possible])[0]
+            action = action if np.random.uniform(0, 1) > prob_exp_random else np.random.choice(env.action_space.n)
         else:
+            overload = env.wrap.rocket.proportionalCoefficients(k_z=2, k_y=2)
             qvalues = agent.get_qvalues([s])
             action = agent.sample_actions(qvalues=qvalues)[0]
 
         _s, r, done, info = env.step(action)
 
-        # if done and not info["Destroyed"]:
-        #     r += 200
-
         reward += r
+
         exp_replay.add(s, action, r, _s, done)
+
         s = _s
 
         if done:
             s = env.reset(**initial_state)
+    # else:
+    #     lives = n_steps
+    #     while lives:
+    #         if expert:
+    #             env.wrap.rocket.grav_compensate()
+    #             overload = env.wrap.rocket.proportionalCoefficients(k_z=2, k_y=2)
+    #             possible = env.wrap.findClosestFromLegal(overload)
+    #             action = env.wrap.overloadsToNumber([possible])[0]
+    #         else:
+    #             qvalues = agent.get_qvalues([s])
+    #             action = agent.sample_actions(qvalues=qvalues)[0]
+    #
+    #         _s, r, done, info = env.step(action)
+    #
+    #         reward += r
+    #
+    #         temp_replay.add(s, action, r, _s, done)
+    #
+    #         s = _s
+    #
+    #         if done:
+    #             s = env.reset(**initial_state)
+    #             if np.greater(reward, mean-0.01):
+    #                 lives -= 1
+    #                 s_, a_, r_, next_s_, done_ = temp_replay.sample(len(temp_replay))
+    #                 for st, ac, re, n, d in zip(s_, a_, r_, next_s_, done_):
+    #                     exp_replay.add(st, ac, re, n, d)
 
     return reward, s
+
 
 def compute_td_loss(states, actions, rewards, next_states, is_done,
                     agent, target_network,
