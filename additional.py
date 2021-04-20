@@ -10,7 +10,7 @@ def graph(rocket_log, la_log, true_overload):
     np.savetxt("0.csv", rocket_coord[:, [2, 0, 1]], delimiter=",")
     np.savetxt("1.csv", la_coord[:, [2, 0, 1]], delimiter=",")
 
-    overloads = rocket_log[:, -2:]
+    overloads = rocket_log[:, 10:12]
 
     plt.figure(figsize=[16, 9])
 
