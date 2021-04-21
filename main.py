@@ -58,9 +58,9 @@ target_network.load_state_dict(agent.state_dict())
 timesteps_per_epoch = 10
 batch_size = 16
 total_steps = 3 * 10 ** 6
-decay_steps = 3*10 ** 5
+decay_steps = 3*10 ** 5/10
 
-opt = torch.optim.Adam(agent.parameters(), lr=1e-6)
+opt = torch.optim.Adam(agent.parameters(), lr=1e-5)
 
 init_epsilon = 0.8
 final_epsilon = 0.01
@@ -176,8 +176,8 @@ for step in trange(step, total_steps + 1):
         # Load agent weights into target_network
         target_network.load_state_dict(agent.state_dict())
 
-    # deb = False
-    draw = True
+    # deb = True
+    draw = False
     if step % eval_freq == 0:
     # if deb == True:
         mean_rw_history.append(evaluate(
@@ -195,7 +195,7 @@ for step in trange(step, total_steps + 1):
 
         print("Last reward = ", mean_rw_history[-1])
 
-        if step % eval_freq*5 == 0:
+        if (step % eval_freq)*5 and draw == 0:
             plt.figure(figsize=[16, 9])
 
             plt.subplot(2, 2, 1)
