@@ -13,11 +13,13 @@ class PreprocessiObs(ObservationWrapper):
         ObservationWrapper.__init__(self, env)
 
         self.angle_values = [3, 4, 5, 19, 20, 21]
-        self.coordinates_values = [0, 1, 2, 12, 13, 14]  # rocket + target coordinates
+        self.coordinates_values = [12, 13, 14]  # rocket(0,1,2) + target coordinates
         self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
         self.speed = [6, 18]  # 15, 16, 17 target speed projections
         self.distance = [22]
         self.for_overload = [23, 24]
+        self.angle_to_target = [25]
+        self.target_speed = [15, 16, 17]
         self.min_coor = -5000
         self.max_coor = 20000
         self.state_size = (1, self.observation(self.env.get_obs).shape[0])
@@ -35,8 +37,7 @@ class PreprocessiObs(ObservationWrapper):
         new_obs = np.empty(0)
         for i, elem in enumerate(obs):
             if i in self.coordinates_values:
-                continue
-                elem = np.round(elem, -2)
+                elem = np.round(elem, -2)/1000
                 # elem = np.round((elem - self.min_coor)/(self.max_coor - self.min_coor), 5)
             elif i in self.overloads:
                 continue
@@ -49,8 +50,11 @@ class PreprocessiObs(ObservationWrapper):
                 elem = np.round(elem)
                 # elem = elem / 100
             elif i in self.distance:
-                continue
-                elem = np.round(elem, -2)
+                elem = np.round(elem, -2)/1000
+            elif i in self.angle_to_target:
+                elem = np.round(elem, 3)
+            elif i in self.target_speed:
+                elem = elem / 1000
             elif i in self.for_overload:
                 if i == 24:
                     elem = np.round(elem, 2)
@@ -100,10 +104,10 @@ class DQNAgent(nn.Module):
         qvalues = self.dense1(state_t)
         qvalues = self.relu1(qvalues)
         qvalues = self.dense2(qvalues)
-        # qvalues = self.relu2(qvalues)
-        # qvalues = self.dense3(qvalues)
-        # qvalues = self.relu3(qvalues)
-        # qvalues = self.dense4(qvalues)
+        qvalues = self.relu2(qvalues)
+        qvalues = self.dense3(qvalues)
+        qvalues = self.relu3(qvalues)
+        qvalues = self.dense4(qvalues)
         # qvalues = self.relu4(qvalues)
         # qvalues = self.dense5(qvalues)
         # qvalues = self.relu5(qvalues)
@@ -139,11 +143,11 @@ class DQNAgent(nn.Module):
         return np.where(should_explore, random_actions, best_actions)
 
 
-def evaluate(env, agent, n_games=1, greedy=False, t_max=10000, **init_params):
+def evaluate(env, agent, init_params, n_games=1, greedy=False, t_max=2000):
     """ Plays n_games full games. If greedy, picks actions as argmax(qvalues). Returns mean reward. """
     rewards = []
     for _ in range(n_games):
-        s = env.reset(**init_params)
+        s = env.reset(**init_params())
         reward = 0
         for _ in range(t_max):
             qvalues = agent.get_qvalues([s])
@@ -151,6 +155,7 @@ def evaluate(env, agent, n_games=1, greedy=False, t_max=10000, **init_params):
             s, r, done, info = env.step(action)
             reward += r
             if done:
+                print(info)
                 break
 
         rewards.append(reward)
@@ -173,7 +178,7 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
     reward = 0
     # temp_replay = ReplayBuffer(10**3)
     over = []
-
+    r_l = []
     # Play the game for n_steps as per instructions above
     for i in range(n_steps):
         if expert:
@@ -191,6 +196,7 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
         _s, r, done, info = env.step(action)
 
         reward += r
+        r_l.append(reward)
 
         exp_replay.add(s, action, r, _s, done)
 
@@ -198,6 +204,7 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
 
         if done:
             s = env.reset(**initial_state)
+            return reward, s
     # else:
     #     lives = n_steps
     #     while lives:
