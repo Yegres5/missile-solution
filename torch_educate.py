@@ -85,11 +85,11 @@ class DQNAgent(nn.Module):
         print("number of neurons = ", self.const_neurons)
 
         self.dense1 = nn.Linear(in_features=state_shape[1], out_features=self.const_neurons)
-        self.relu1 = nn.LeakyReLU()
+        self.relu1 = nn.ReLU()
         self.dense2 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu2 = nn.LeakyReLU()
+        self.relu2 = nn.ReLU()
         self.dense3 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu3 = nn.LeakyReLU()
+        self.relu3 = nn.ReLU()
         self.dense4 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
         self.relu4 = nn.LeakyReLU()
         self.dense5 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
@@ -102,12 +102,12 @@ class DQNAgent(nn.Module):
         :param state_t: a batch of 4-frame buffers, shape = [batch_size, 4, h, w]
         """
         qvalues = self.dense1(state_t)
-        qvalues = self.relu1(qvalues)
+        # qvalues = self.relu1(qvalues)
         qvalues = self.dense2(qvalues)
         qvalues = self.relu2(qvalues)
         qvalues = self.dense3(qvalues)
-        qvalues = self.relu3(qvalues)
-        qvalues = self.dense4(qvalues)
+        # qvalues = self.relu3(qvalues)
+        # qvalues = self.dense4(qvalues)
         # qvalues = self.relu4(qvalues)
         # qvalues = self.dense5(qvalues)
         # qvalues = self.relu5(qvalues)
@@ -146,6 +146,7 @@ class DQNAgent(nn.Module):
 def evaluate(env, agent, init_params, n_games=1, greedy=False, t_max=2000):
     """ Plays n_games full games. If greedy, picks actions as argmax(qvalues). Returns mean reward. """
     rewards = []
+    infos = []
     for _ in range(n_games):
         s = env.reset(**init_params())
         reward = 0
@@ -156,9 +157,11 @@ def evaluate(env, agent, init_params, n_games=1, greedy=False, t_max=2000):
             reward += r
             if done:
                 print(info)
+                infos.append(info["Distance"])
                 break
 
         rewards.append(reward)
+    print("Mean distance = ", np.mean(infos))
     return np.mean(rewards)
 
 
@@ -200,7 +203,7 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
         _s, r, done, info = env.step(action)
 
         reward += r
-        r_l.append(reward)
+        r_l.append(r)
 
         exp_replay.add(s, action, r, _s, done)
 
@@ -208,8 +211,11 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
 
         if done:
             s = env.reset(**initial_state())
-            # print(reward)
             reward = 0
+            # print(len(r_l), np.sum(r_l), info)
+            # r_l = []
+            # # print(reward)
+            # break
 
     return reward, s
 

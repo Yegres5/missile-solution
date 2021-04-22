@@ -13,6 +13,7 @@ from additional import graph
 from draw_animation import drawAnimation
 import sys
 import os
+import missile_env
 
 seed = 43
 random.seed(seed)
@@ -56,11 +57,11 @@ target_network = DQNAgent(state_shape, n_actions).to(device)
 target_network.load_state_dict(agent.state_dict())
 
 timesteps_per_epoch = 10
-batch_size = 100
+batch_size = 300
 total_steps = 3 * 10 ** 6
-decay_steps = 10 ** 5
+decay_steps = 10 ** 5/10
 
-opt = torch.optim.Adam(agent.parameters(), lr=1e-5)
+opt = torch.optim.Adam(agent.parameters(), lr=1e-4)
 
 init_epsilon = 0.8
 final_epsilon = 0.01
@@ -83,7 +84,7 @@ step = 0
 # for i in range(3000):
 #     """ Ram consumable maybe check for available RAM """
 #     play_and_record(initial_state=reset_params,
-#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=True, prob_exp_random=0)
+#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=False, prob_exp_random=0)
 #     if len(exp_replay) == 2*10 ** 4:
 #         break
 #
@@ -163,7 +164,7 @@ for step in trange(step, total_steps + 1):
     # for i in range(s_.shape[0]):
     #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
 
-    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.98)
+    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.97)
 
     loss.backward()
     grad_norm = nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
@@ -184,7 +185,7 @@ for step in trange(step, total_steps + 1):
     # if deb == True:
         mean_rw_history.append(evaluate(
             make_env(seed=step, rocket_info=rocket_info, target_info=target_info),
-            agent, n_games=30, greedy=True, init_params=reset_params)
+            agent, n_games=5, greedy=True, init_params=reset_params)
         )
         initial_state_q_values = agent.get_qvalues(
             [make_env(seed=step, rocket_info=rocket_info, target_info=target_info).reset()]
@@ -221,8 +222,8 @@ for step in trange(step, total_steps + 1):
             plt.grid()
 
             # plt.show(block=True)
-            plt.savefig(f"{os.getcwd()}/log/4/{step}_log.png")
-            torch.save(agent, f"{os.getcwd()}/log/4/{step}_agent.pt")
+            plt.savefig(f"{os.getcwd()}/log/5/{step}_log.png")
+            torch.save(agent, f"{os.getcwd()}/log/5/{step}_agent.pt")
             plt.close("all")
 
 
