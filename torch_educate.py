@@ -12,7 +12,7 @@ class PreprocessiObs(ObservationWrapper):
         """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
         ObservationWrapper.__init__(self, env)
 
-        self.angle_values = [3, 4, 5, 19, 20, 21]
+        self.angle_values = [3, 4, 5, 29, 30, 31]
         self.coordinates_values = [12, 13, 14]  # rocket(0,1,2) + target coordinates
         self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
         self.speed = [6, 18]  # 15, 16, 17 target speed projections
@@ -37,27 +37,27 @@ class PreprocessiObs(ObservationWrapper):
         new_obs = np.empty(0)
         for i, elem in enumerate(obs):
             if i in self.coordinates_values:
-                elem = np.round(elem, -2)/1000
+                elem = np.round(elem, 0)/1000
                 # elem = np.round((elem - self.min_coor)/(self.max_coor - self.min_coor), 5)
             elif i in self.overloads:
                 continue
                 elem = np.round(elem, 2)
             elif i in self.angle_values:
-                continue
-                elem = np.round(np.array(list(map(self.transform_to_trigonometry, elem))).reshape(-1), 4)
+                # elem = np.round(np.array(list(map(self.transform_to_trigonometry, elem))).reshape(-1), 4)
+                elem = np.round(np.array(self.transform_to_trigonometry(elem)), 4)
             elif i in self.speed:
                 continue
                 elem = np.round(elem)
                 # elem = elem / 100
             elif i in self.distance:
-                elem = np.round(elem, -2)/1000
+                elem = np.round(elem, 0)/1000
             elif i in self.angle_to_target:
                 elem = np.round(elem, 3)
             elif i in self.target_speed:
                 elem = elem / 1000
             elif i in self.for_overload:
                 if i == 24:
-                    elem = np.round(elem, 2)
+                    elem = np.round(elem, 3)
                 else:
                     continue
             else:
@@ -179,8 +179,12 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
     # temp_replay = ReplayBuffer(10**3)
     over = []
     r_l = []
+    # rew = []
+    # st = []
+    # q = 0
     # Play the game for n_steps as per instructions above
     for i in range(n_steps):
+        # q += 1
         if expert:
             env.wrap.rocket.grav_compensate()
             overload = env.wrap.rocket.proportionalCoefficients(k_z=2, k_y=2)
@@ -203,37 +207,22 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
         s = _s
 
         if done:
-            s = env.reset(**initial_state)
-            return reward, s
-    # else:
-    #     lives = n_steps
-    #     while lives:
-    #         if expert:
-    #             env.wrap.rocket.grav_compensate()
-    #             overload = env.wrap.rocket.proportionalCoefficients(k_z=2, k_y=2)
-    #             possible = env.wrap.findClosestFromLegal(overload)
-    #             action = env.wrap.overloadsToNumber([possible])[0]
-    #         else:
-    #             qvalues = agent.get_qvalues([s])
-    #             action = agent.sample_actions(qvalues=qvalues)[0]
-    #
-    #         _s, r, done, info = env.step(action)
-    #
-    #         reward += r
-    #
-    #         temp_replay.add(s, action, r, _s, done)
-    #
-    #         s = _s
-    #
-    #         if done:
-    #             s = env.reset(**initial_state)
-    #             if np.greater(reward, mean-0.01):
-    #                 lives -= 1
-    #                 s_, a_, r_, next_s_, done_ = temp_replay.sample(len(temp_replay))
-    #                 for st, ac, re, n, d in zip(s_, a_, r_, next_s_, done_):
-    #                     exp_replay.add(st, ac, re, n, d)
+            s = env.reset(**initial_state())
+            # print(reward)
+            reward = 0
 
     return reward, s
+
+            # z = {"r_euler": [0, np.random.uniform(np.deg2rad(-5), np.deg2rad(5)), 0],
+            #      "t_euler": [0, np.random.uniform(np.deg2rad(-90), np.deg2rad(90)), 0]}
+            # s = env.reset(**z)
+            # print(q, info, reward)
+            # rew.append(reward)
+            # st.append(q)
+            # q = 0
+            # reward = 0
+
+
 
 
 def compute_td_loss(states, actions, rewards, next_states, is_done,

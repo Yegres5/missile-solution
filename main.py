@@ -56,9 +56,9 @@ target_network = DQNAgent(state_shape, n_actions).to(device)
 target_network.load_state_dict(agent.state_dict())
 
 timesteps_per_epoch = 10
-batch_size = 16
+batch_size = 100
 total_steps = 3 * 10 ** 6
-decay_steps = 3*10 ** 5/10
+decay_steps = 10 ** 5
 
 opt = torch.optim.Adam(agent.parameters(), lr=1e-5)
 
@@ -67,7 +67,7 @@ final_epsilon = 0.01
 
 loss_freq = 50
 refresh_target_network_freq = 100
-eval_freq = 2000
+eval_freq = 100
 
 max_grad_norm = 50
 
@@ -79,13 +79,13 @@ step = 0
 
 """ Expert play """
 
-exp_replay = ReplayBuffer(2*10 ** 4)
-for i in range(3000):
-    """ Ram consumable maybe check for available RAM """
-    play_and_record(initial_state=reset_params(),
-                    agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=True, prob_exp_random=0)
-    if len(exp_replay) == 2*10 ** 4:
-        break
+# exp_replay = ReplayBuffer(20*10 ** 4)
+# for i in range(3000):
+#     """ Ram consumable maybe check for available RAM """
+#     play_and_record(initial_state=reset_params,
+#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=True, prob_exp_random=0)
+#     if len(exp_replay) == 2*10 ** 4:
+#         break
 #
 # debug = True
 # loss_log = []
@@ -130,12 +130,14 @@ for i in range(3000):
     #     break
 
 """ Train loop """
+plt.figure(figsize=[16, 9])
+plt.close("all")
 
 exp_replay = ReplayBuffer(10 ** 4)
 
 for i in range(1000):
     """ Ram consumable maybe check for available RAM """
-    play_and_record(initial_state=reset_params(),
+    play_and_record(initial_state=reset_params,
                     agent=agent, env=env, exp_replay=exp_replay, n_steps=8*10 ** 2, expert=False)
     if len(exp_replay) == 10 ** 4:
         break
@@ -154,14 +156,14 @@ for step in trange(step, total_steps + 1):
 
     # all_rew = exp_replay.sample(len(exp_replay))[2]
     # mean = all_rew[all_rew != 0].mean()
-    _, state = play_and_record(reset_params(), agent, env, exp_replay, timesteps_per_epoch)
+    _, state = play_and_record(reset_params, agent, env, exp_replay, timesteps_per_epoch)
 
     # train
-    s_, a_, r_, next_s_, done_ = exp_replay.sample(500)
+    s_, a_, r_, next_s_, done_ = exp_replay.sample(batch_size)
     # for i in range(s_.shape[0]):
     #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
 
-    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.99)
+    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.98)
 
     loss.backward()
     grad_norm = nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
@@ -177,12 +179,12 @@ for step in trange(step, total_steps + 1):
         target_network.load_state_dict(agent.state_dict())
 
     # deb = True
-    draw = False
+    draw = True
     if step % eval_freq == 0:
     # if deb == True:
         mean_rw_history.append(evaluate(
             make_env(seed=step, rocket_info=rocket_info, target_info=target_info),
-            agent, n_games=10, greedy=True, init_params=reset_params)
+            agent, n_games=30, greedy=True, init_params=reset_params)
         )
         initial_state_q_values = agent.get_qvalues(
             [make_env(seed=step, rocket_info=rocket_info, target_info=target_info).reset()]
@@ -195,8 +197,7 @@ for step in trange(step, total_steps + 1):
 
         print("Last reward = ", mean_rw_history[-1])
 
-        if (step % eval_freq)*5 and draw == 0:
-            plt.figure(figsize=[16, 9])
+        if step % (eval_freq*5) == 0 and draw:
 
             plt.subplot(2, 2, 1)
             plt.title("Mean reward per life")
@@ -220,13 +221,14 @@ for step in trange(step, total_steps + 1):
             plt.grid()
 
             # plt.show(block=True)
-            plt.savefig(f"{os.getcwd()}/log/1/{step}_log.png")
-            torch.save(agent, f"{os.getcwd()}/log/1/{step}_agent.pt")
+            plt.savefig(f"{os.getcwd()}/log/4/{step}_log.png")
+            torch.save(agent, f"{os.getcwd()}/log/4/{step}_agent.pt")
+            plt.close("all")
 
-reward = 0
 
 t = reset_params()
 
+reward = 0
 env.reset(**t)
 log = np.array(env.get_obs)
 true_overload = np.empty(2)
