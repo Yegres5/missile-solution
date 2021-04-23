@@ -12,7 +12,7 @@ class PreprocessiObs(ObservationWrapper):
         """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
         ObservationWrapper.__init__(self, env)
 
-        self.angle_values = [3, 4, 5, 29, 30, 31]
+        self.angle_values = [3, 4, 5, 19, 20, 21, 29, 30, 31]
         self.coordinates_values = [12, 13, 14]  # rocket(0,1,2) + target coordinates
         self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
         self.speed = [6, 18]  # 15, 16, 17 target speed projections
@@ -40,14 +40,14 @@ class PreprocessiObs(ObservationWrapper):
                 elem = np.round(elem, 0)/1000
                 # elem = np.round((elem - self.min_coor)/(self.max_coor - self.min_coor), 5)
             elif i in self.overloads:
-                continue
+                # continue
                 elem = np.round(elem, 2)
             elif i in self.angle_values:
                 # elem = np.round(np.array(list(map(self.transform_to_trigonometry, elem))).reshape(-1), 4)
                 elem = np.round(np.array(self.transform_to_trigonometry(elem)), 4)
             elif i in self.speed:
-                continue
-                elem = np.round(elem)
+                # continue
+                elem = np.round(elem)/1000
                 # elem = elem / 100
             elif i in self.distance:
                 elem = np.round(elem, 0)/1000
@@ -85,11 +85,11 @@ class DQNAgent(nn.Module):
         print("number of neurons = ", self.const_neurons)
 
         self.dense1 = nn.Linear(in_features=state_shape[1], out_features=self.const_neurons)
-        self.relu1 = nn.ReLU()
+        self.relu1 = nn.LeakyReLU()
         self.dense2 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu2 = nn.ReLU()
+        self.relu2 = nn.LeakyReLU()
         self.dense3 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu3 = nn.ReLU()
+        self.relu3 = nn.LeakyReLU()
         self.dense4 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
         self.relu4 = nn.LeakyReLU()
         self.dense5 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
@@ -102,12 +102,12 @@ class DQNAgent(nn.Module):
         :param state_t: a batch of 4-frame buffers, shape = [batch_size, 4, h, w]
         """
         qvalues = self.dense1(state_t)
-        # qvalues = self.relu1(qvalues)
+        qvalues = self.relu1(qvalues)
         qvalues = self.dense2(qvalues)
         qvalues = self.relu2(qvalues)
         qvalues = self.dense3(qvalues)
-        # qvalues = self.relu3(qvalues)
-        # qvalues = self.dense4(qvalues)
+        qvalues = self.relu3(qvalues)
+        qvalues = self.dense4(qvalues)
         # qvalues = self.relu4(qvalues)
         # qvalues = self.dense5(qvalues)
         # qvalues = self.relu5(qvalues)

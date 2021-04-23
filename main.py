@@ -57,9 +57,9 @@ target_network = DQNAgent(state_shape, n_actions).to(device)
 target_network.load_state_dict(agent.state_dict())
 
 timesteps_per_epoch = 10
-batch_size = 300
+batch_size = 200
 total_steps = 3 * 10 ** 6
-decay_steps = 10 ** 5/10
+decay_steps = 3*10 ** 5
 
 opt = torch.optim.Adam(agent.parameters(), lr=1e-4)
 
@@ -131,8 +131,6 @@ step = 0
     #     break
 
 """ Train loop """
-plt.figure(figsize=[16, 9])
-plt.close("all")
 
 exp_replay = ReplayBuffer(10 ** 4)
 
@@ -199,6 +197,7 @@ for step in trange(step, total_steps + 1):
         print("Last reward = ", mean_rw_history[-1])
 
         if step % (eval_freq*5) == 0 and draw:
+            plt.figure(figsize=[16, 9])
 
             plt.subplot(2, 2, 1)
             plt.title("Mean reward per life")
@@ -222,8 +221,8 @@ for step in trange(step, total_steps + 1):
             plt.grid()
 
             # plt.show(block=True)
-            plt.savefig(f"{os.getcwd()}/log/5/{step}_log.png")
-            torch.save(agent, f"{os.getcwd()}/log/5/{step}_agent.pt")
+            plt.savefig(f"{os.getcwd()}/log/6/{step}_log.png")
+            torch.save(agent, f"{os.getcwd()}/log/6/{step}_agent.pt")
             plt.close("all")
 
 
@@ -248,7 +247,7 @@ for _ in range(500):
     print("True = ", overload, "Possible = ", possible)
     s = env.observation(env.get_obs)
     s = torch.tensor(s, device=device, dtype=torch.float)
-    action_num = torch.argmax(agent(s))
+    # action_num = torch.argmax(agent(s))
 
     ob, r, done, info = env.step(action_num)
 
