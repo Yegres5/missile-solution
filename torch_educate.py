@@ -37,23 +37,24 @@ class PreprocessiObs(ObservationWrapper):
         new_obs = np.empty(0)
         for i, elem in enumerate(obs):
             if i in self.coordinates_values:
+                continue
                 elem = np.round(elem, 0)/1000
                 # elem = np.round((elem - self.min_coor)/(self.max_coor - self.min_coor), 5)
             elif i in self.overloads:
-                # continue
+                continue
                 elem = np.round(elem, 2)
             elif i in self.angle_values:
-                # elem = np.round(np.array(list(map(self.transform_to_trigonometry, elem))).reshape(-1), 4)
+                continue
                 elem = np.round(np.array(self.transform_to_trigonometry(elem)), 4)
             elif i in self.speed:
-                # continue
+                continue
                 elem = np.round(elem)/1000
-                # elem = elem / 100
             elif i in self.distance:
                 elem = np.round(elem, 0)/1000
             elif i in self.angle_to_target:
                 elem = np.round(elem, 3)
             elif i in self.target_speed:
+                continue
                 elem = elem / 1000
             elif i in self.for_overload:
                 if i == 24:
@@ -104,10 +105,10 @@ class DQNAgent(nn.Module):
         qvalues = self.dense1(state_t)
         qvalues = self.relu1(qvalues)
         qvalues = self.dense2(qvalues)
-        qvalues = self.relu2(qvalues)
-        qvalues = self.dense3(qvalues)
-        qvalues = self.relu3(qvalues)
-        qvalues = self.dense4(qvalues)
+        # qvalues = self.relu2(qvalues)
+        # qvalues = self.dense3(qvalues)
+        # qvalues = self.relu3(qvalues)
+        # qvalues = self.dense4(qvalues)
         # qvalues = self.relu4(qvalues)
         # qvalues = self.dense5(qvalues)
         # qvalues = self.relu5(qvalues)
@@ -211,10 +212,10 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1, expert=Fal
 
         if done:
             s = env.reset(**initial_state())
-            reward = 0
             # print(len(r_l), np.sum(r_l), info)
+            # print(reward)
             # r_l = []
-            # # print(reward)
+            reward = 0
             # break
 
     return reward, s

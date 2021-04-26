@@ -38,11 +38,32 @@ def make_env(seed, rocket_info, target_info):
 
 """## Main loop
 """
+def get_rand(min, max):
+    return np.random.uniform(np.deg2rad(min), np.deg2rad(max))
 
-def reset_params():
+def get_rand_ini():
+    return {"r_euler": [0, get_rand(0, 0), 0],
+            "t_euler": [0, get_rand(-90, -90), 0]}
+
+def static_vars(**kwargs):
+    def decorate(func):
+        for k in kwargs:
+            setattr(func, k, kwargs[k])
+        return func
+    return decorate
+
+@static_vars(ini_list = np.empty(0))
+def reset_params(count=10000):
     # return {"r_euler": [0, np.deg2rad(-20), 0]}
-    return {"r_euler": [0, np.random.uniform(np.deg2rad(-5), np.deg2rad(5)), 0],
-            "t_euler": [0, np.random.uniform(np.deg2rad(-90), np.deg2rad(90)), 0]}
+    try:
+        ini = reset_params.ini_list[0]
+    except IndexError:
+        reset_params.ini_list = np.hstack([reset_params.ini_list, [get_rand_ini() for _ in range(count)]])
+        ini = reset_params.ini_list[0]
+
+    reset_params.ini_list = np.delete(reset_params.ini_list, 0)
+    return ini
+
     # return #{"la_coord": [np.random.uniform(-250, 250), np.random.uniform(-250, 250), np.random.uniform(-250, 250)]}
 
 env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
@@ -56,19 +77,19 @@ agent = DQNAgent(state_shape, n_actions, epsilon=1).to(device)
 target_network = DQNAgent(state_shape, n_actions).to(device)
 target_network.load_state_dict(agent.state_dict())
 
-timesteps_per_epoch = 10
+timesteps_per_epoch = 100
 batch_size = 200
 total_steps = 3 * 10 ** 6
-decay_steps = 3*10 ** 5
+decay_steps = 500#10 ** 5/10
 
 opt = torch.optim.Adam(agent.parameters(), lr=1e-4)
 
 init_epsilon = 0.8
 final_epsilon = 0.01
 
-loss_freq = 50
-refresh_target_network_freq = 100
-eval_freq = 100
+loss_freq = 10
+refresh_target_network_freq = 50
+eval_freq = 50
 
 max_grad_norm = 50
 
@@ -84,7 +105,7 @@ step = 0
 # for i in range(3000):
 #     """ Ram consumable maybe check for available RAM """
 #     play_and_record(initial_state=reset_params,
-#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=False, prob_exp_random=0)
+#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=True, prob_exp_random=0)
 #     if len(exp_replay) == 2*10 ** 4:
 #         break
 #
@@ -137,7 +158,7 @@ exp_replay = ReplayBuffer(10 ** 4)
 for i in range(1000):
     """ Ram consumable maybe check for available RAM """
     play_and_record(initial_state=reset_params,
-                    agent=agent, env=env, exp_replay=exp_replay, n_steps=8*10 ** 2, expert=False)
+                    agent=agent, env=env, exp_replay=exp_replay, n_steps=8*10 ** 2, expert=False, prob_exp_random=0.5)
     if len(exp_replay) == 10 ** 4:
         break
 
@@ -162,7 +183,7 @@ for step in trange(step, total_steps + 1):
     # for i in range(s_.shape[0]):
     #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
 
-    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.97)
+    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.95)
 
     loss.backward()
     grad_norm = nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
@@ -221,8 +242,8 @@ for step in trange(step, total_steps + 1):
             plt.grid()
 
             # plt.show(block=True)
-            plt.savefig(f"{os.getcwd()}/log/6/{step}_log.png")
-            torch.save(agent, f"{os.getcwd()}/log/6/{step}_agent.pt")
+            plt.savefig(f"{os.getcwd()}/log/7/{step}_log.png")
+            torch.save(agent, f"{os.getcwd()}/log/7/{step}_agent.pt")
             plt.close("all")
 
 
@@ -233,7 +254,7 @@ env.reset(**t)
 log = np.array(env.get_obs)
 true_overload = np.empty(2)
 
-for _ in range(500):
+for _ in range(800):
     env.wrap.rocket.grav_compensate()
     overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
     if true_overload.shape[0] == 0:
@@ -244,17 +265,17 @@ for _ in range(500):
     possible = env.wrap.findClosestFromLegal(overload)
     action_num = env.wrap.overloadsToNumber([possible])[0]
 
-    print("True = ", overload, "Possible = ", possible)
+    # print("True = ", overload, "Possible = ", possible)
     s = env.observation(env.get_obs)
     s = torch.tensor(s, device=device, dtype=torch.float)
-    # action_num = torch.argmax(agent(s))
+    action_num = torch.argmax(agent(s))
 
     ob, r, done, info = env.step(action_num)
 
     reward += r
 
     log = np.vstack((log, env.get_obs))
-    print("Distance to target = ", env.wrap.distance_to_target)
+    print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
     if done:
         break
 
