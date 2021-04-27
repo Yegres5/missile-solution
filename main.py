@@ -38,21 +38,27 @@ def make_env(seed, rocket_info, target_info):
 
 """## Main loop
 """
+
+
 def get_rand(min, max):
     return np.random.uniform(np.deg2rad(min), np.deg2rad(max))
 
+
 def get_rand_ini():
     return {"r_euler": [0, get_rand(0, 0), 0],
-            "t_euler": [0, get_rand(-90, -90), 0]}
+            "t_euler": [0, get_rand(-90, 90), 0]}
+
 
 def static_vars(**kwargs):
     def decorate(func):
         for k in kwargs:
             setattr(func, k, kwargs[k])
         return func
+
     return decorate
 
-@static_vars(ini_list = np.empty(0))
+
+@static_vars(ini_list=np.empty(0))
 def reset_params(count=10000):
     # return {"r_euler": [0, np.deg2rad(-20), 0]}
     try:
@@ -66,38 +72,6 @@ def reset_params(count=10000):
 
     # return #{"la_coord": [np.random.uniform(-250, 250), np.random.uniform(-250, 250), np.random.uniform(-250, 250)]}
 
-env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
-
-state_shape = env.observation_space.shape
-n_actions = env.action_space.n
-state = env.reset(**reset_params())
-
-agent = DQNAgent(state_shape, n_actions, epsilon=1).to(device)
-
-target_network = DQNAgent(state_shape, n_actions).to(device)
-target_network.load_state_dict(agent.state_dict())
-
-timesteps_per_epoch = 100
-batch_size = 200
-total_steps = 3 * 10 ** 6
-decay_steps = 500#10 ** 5/10
-
-opt = torch.optim.Adam(agent.parameters(), lr=1e-4)
-
-init_epsilon = 0.8
-final_epsilon = 0.01
-
-loss_freq = 10
-refresh_target_network_freq = 50
-eval_freq = 50
-
-max_grad_norm = 50
-
-mean_rw_history = []
-td_loss_history = []
-grad_norm_history = []
-initial_state_v_history = []
-step = 0
 
 """ Expert play """
 
@@ -105,7 +79,7 @@ step = 0
 # for i in range(3000):
 #     """ Ram consumable maybe check for available RAM """
 #     play_and_record(initial_state=reset_params,
-#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=True, prob_exp_random=0)
+#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=False, prob_exp_random=0)
 #     if len(exp_replay) == 2*10 ** 4:
 #         break
 #
@@ -148,144 +122,257 @@ step = 0
 #         print(loss_log[-1])#, rew_log[-1])
 
 
-    # if np.floor(i / 30) == 20:
-    #     break
+# if np.floor(i / 30) == 20:
+#     break
 
 """ Train loop """
 
-exp_replay = ReplayBuffer(10 ** 4)
 
-for i in range(1000):
-    """ Ram consumable maybe check for available RAM """
-    play_and_record(initial_state=reset_params,
-                    agent=agent, env=env, exp_replay=exp_replay, n_steps=8*10 ** 2, expert=False, prob_exp_random=0.5)
-    if len(exp_replay) == 10 ** 4:
-        break
+class Tester:
+    def __init__(self, nn_lst, buffer_size):
+        self.env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
 
-state = env.reset(**reset_params())
+        self.state_shape = self.env.observation_space.shape
+        self.n_actions = self.env.action_space.n
+        self.state = self.env.reset(**reset_params())
 
-for step in trange(step, total_steps + 1):
-    if not utils.is_enough_ram():
-        try:
-            while True:
-                pass
-        except KeyboardInterrupt:
-            pass
+        self.agent = DQNAgent(self.state_shape, self.n_actions, layers_lst=nn_lst, epsilon=1).to(device)
 
-    agent.epsilon = utils.linear_decay(init_epsilon, final_epsilon, step, decay_steps)
+        self.target_network = DQNAgent(self.state_shape, self.n_actions, layers_lst=nn_lst).to(device)
+        self.target_network.load_state_dict(self.agent.state_dict())
 
-    # all_rew = exp_replay.sample(len(exp_replay))[2]
-    # mean = all_rew[all_rew != 0].mean()
-    _, state = play_and_record(reset_params, agent, env, exp_replay, timesteps_per_epoch)
+        self.timesteps_per_epoch = 100
+        self.batch_size = 400
+        self.total_steps = 3 * 10 ** 6
+        self.decay_steps = 10 ** 5
 
-    # train
-    s_, a_, r_, next_s_, done_ = exp_replay.sample(batch_size)
-    # for i in range(s_.shape[0]):
-    #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
+        self.opt = torch.optim.Adam(self.agent.parameters(), lr=1e-4)
 
-    loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network, gamma=0.95)
+        self.init_epsilon = 0.8
+        self.final_epsilon = 0.01
 
-    loss.backward()
-    grad_norm = nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
-    opt.step()
-    opt.zero_grad()
+        self.loss_freq = 10
+        self.refresh_target_network_freq = 50
+        self.eval_freq = 50
 
-    if step % loss_freq == 0:
-        td_loss_history.append(loss.data.cpu().item())
-        grad_norm_history.append(grad_norm)
+        self.max_grad_norm = 50
 
-    if step % refresh_target_network_freq == 0:
-        # Load agent weights into target_network
-        target_network.load_state_dict(agent.state_dict())
+        self.mean_rw_history = []
+        self.td_loss_history = []
+        self.grad_norm_history = []
+        self.initial_state_v_history = []
+        self.step = 0
 
-    # deb = True
-    draw = True
-    if step % eval_freq == 0:
-    # if deb == True:
-        mean_rw_history.append(evaluate(
-            make_env(seed=step, rocket_info=rocket_info, target_info=target_info),
-            agent, n_games=5, greedy=True, init_params=reset_params)
-        )
-        initial_state_q_values = agent.get_qvalues(
-            [make_env(seed=step, rocket_info=rocket_info, target_info=target_info).reset()]
-        )
-        initial_state_v_history.append(np.max(initial_state_q_values))
+        self.buffer_size = buffer_size
+        self.exp_replay = ReplayBuffer(self.buffer_size)
 
-        clear_output(True)
-        print("buffer size = %i, epsilon = %.5f" %
-              (len(exp_replay), agent.epsilon))
+    def fill_buffer(self):
+        for i in range(1000):
+            play_and_record(initial_state=reset_params,
+                            agent=self.agent, env=self.env, exp_replay=self.exp_replay, n_steps=8 * 10 ** 2,
+                            expert=False, prob_exp_random=0.5)
 
-        print("Last reward = ", mean_rw_history[-1])
+            if len(self.exp_replay) == self.buffer_size:
+                break
 
-        if step % (eval_freq*5) == 0 and draw:
-            plt.figure(figsize=[16, 9])
+    def train(self, total_steps, decay, save_folder):
+        if not os.path.exists(save_folder):
+            os.mkdir(save_folder)
 
-            plt.subplot(2, 2, 1)
-            plt.title("Mean reward per life")
-            plt.plot(mean_rw_history)
-            plt.grid()
+        state = self.env.reset(**reset_params())
 
-            assert not np.isnan(td_loss_history[-1])
-            plt.subplot(2, 2, 2)
-            plt.title("TD loss history (smoothened)")
-            plt.plot(utils.smoothen(td_loss_history))
-            plt.grid()
+        for step in trange(self.step, total_steps + 1):
+            if not utils.is_enough_ram():
+                try:
+                    while True:
+                        pass
+                except KeyboardInterrupt:
+                    pass
 
-            plt.subplot(2, 2, 3)
-            plt.title("Initial state V")
-            plt.plot(initial_state_v_history)
-            plt.grid()
+            self.agent.epsilon = utils.linear_decay(self.init_epsilon, self.final_epsilon, step, decay)
 
-            plt.subplot(2, 2, 4)
-            plt.title("Grad norm history (smoothened)")
-            plt.plot(utils.smoothen(grad_norm_history))
-            plt.grid()
+            # all_rew = exp_replay.sample(len(exp_replay))[2]
+            # mean = all_rew[all_rew != 0].mean()
+            _, state = play_and_record(reset_params, self.agent, self.env, self.exp_replay, self.timesteps_per_epoch)
 
-            # plt.show(block=True)
-            plt.savefig(f"{os.getcwd()}/log/7/{step}_log.png")
-            torch.save(agent, f"{os.getcwd()}/log/7/{step}_agent.pt")
-            plt.close("all")
+            # train
+            s_, a_, r_, next_s_, done_ = self.exp_replay.sample(self.batch_size)
+            # for i in range(s_.shape[0]):
+            #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
+
+            loss = compute_td_loss(s_, a_, r_, next_s_, done_, self.agent, self.target_network, gamma=0.95)
+
+            loss.backward()
+            grad_norm = nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
+            self.opt.step()
+            self.opt.zero_grad()
+
+            if step % self.loss_freq == 0:
+                self.td_loss_history.append(loss.data.cpu().item())
+                self.grad_norm_history.append(grad_norm)
+
+            if step % self.refresh_target_network_freq == 0:
+                # Load agent weights into target_network
+                self.target_network.load_state_dict(self.agent.state_dict())
+
+            # deb = True
+            draw = True
+            if step % self.eval_freq == 0:
+                # if deb == True:
+                self.mean_rw_history.append(evaluate(
+                    make_env(seed=step, rocket_info=rocket_info, target_info=target_info),
+                    self.agent, n_games=5, greedy=True, init_params=reset_params)
+                )
+                initial_state_q_values = self.agent.get_qvalues(
+                    [make_env(seed=step, rocket_info=rocket_info, target_info=target_info).reset()]
+                )
+                self.initial_state_v_history.append(np.max(initial_state_q_values))
+
+                clear_output(True)
+                print("buffer size = %i, epsilon = %.5f" %
+                      (len(self.exp_replay), self.agent.epsilon))
+
+                print("Last reward = ", self.mean_rw_history[-1])
+
+                if step % (self.eval_freq * 5) == 0 and draw:
+                    plt.figure(figsize=[16, 9])
+
+                    plt.subplot(2, 2, 1)
+                    plt.title("Mean reward per life")
+                    plt.plot(self.mean_rw_history)
+                    plt.grid()
+
+                    assert not np.isnan(self.td_loss_history[-1])
+                    plt.subplot(2, 2, 2)
+                    plt.title("TD loss history (smoothened)")
+                    plt.plot(utils.smoothen(self.td_loss_history))
+                    plt.grid()
+
+                    plt.subplot(2, 2, 3)
+                    plt.title("Initial state V")
+                    plt.plot(self.initial_state_v_history)
+                    plt.grid()
+
+                    plt.subplot(2, 2, 4)
+                    plt.title("Grad norm history (smoothened)")
+                    plt.plot(utils.smoothen(self.grad_norm_history))
+                    plt.grid()
+
+                    plt.savefig(f"{save_folder}/{step}_log.png")
+                    torch.save(self.agent, f"{save_folder}/{step}_agent.pt")
+                    plt.close("all")
+
+test_list = []
+
+def layer(neurons):
+    return nn.Linear(neurons, neurons), activation()
+
+activation = nn.LeakyReLU
+
+neurons = 32
+
+test_list.append([activation(),
+                  *layer(neurons)
+                  ])
+
+test_list.append([activation(),
+                  *layer(neurons),
+                  *layer(neurons)
+                  ])
+
+test_list.append([activation(),
+                  *layer(neurons),
+                  *layer(neurons),
+                  *layer(neurons)
+                  ])
+
+neurons = 64
+
+test_list.append([activation(),
+                  *layer(neurons)
+                  ])
+
+test_list.append([activation(),
+                  *layer(neurons),
+                  *layer(neurons)
+                  ])
+
+test_list.append([activation(),
+                  *layer(neurons),
+                  *layer(neurons),
+                  *layer(neurons)
+                  ])
+
+neurons = 128
+
+test_list.append([activation(),
+                  *layer(neurons)
+                  ])
+
+test_list.append([activation(),
+                  *layer(neurons),
+                  *layer(neurons)
+                  ])
+
+test_list.append([activation(),
+                  *layer(neurons),
+                  *layer(neurons),
+                  *layer(neurons)
+                  ])
 
 
-t = reset_params()
+for i, net in enumerate(test_list):
+    print(net)
+    t1 = Tester(nn_lst=net,
+                buffer_size=10 ** 4)
 
-reward = 0
-env.reset(**t)
-log = np.array(env.get_obs)
-true_overload = np.empty(2)
+    print("Filling buffer")
+    t1.fill_buffer()
+    t1.train(total_steps=2000, decay=1000,
+             save_folder=f"{os.getcwd()}/log/9/{int((len(net)-1)/2)}_{net[1].in_features}")
 
-for _ in range(800):
-    env.wrap.rocket.grav_compensate()
-    overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
-    if true_overload.shape[0] == 0:
-        true_overload = np.hstack((true_overload, overload))
-    else:
-        true_overload = np.vstack((true_overload, overload))
 
-    possible = env.wrap.findClosestFromLegal(overload)
-    action_num = env.wrap.overloadsToNumber([possible])[0]
 
-    # print("True = ", overload, "Possible = ", possible)
-    s = env.observation(env.get_obs)
-    s = torch.tensor(s, device=device, dtype=torch.float)
-    action_num = torch.argmax(agent(s))
-
-    ob, r, done, info = env.step(action_num)
-
-    reward += r
-
-    log = np.vstack((log, env.get_obs))
-    print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
-    if done:
-        break
-
-print("Reward = ", np.round(reward, 4))
-
-rocket_log = log[:, :26]
-la_log = log[:, 26:]
-
-graph(rocket_log=rocket_log, la_log=la_log, true_overload=true_overload)
-
-drawAnimation()
+# t = reset_params()
+# # t["t_euler"][1] = -t["t_euler"][1]
+#
+# reward = 0
+# env.reset(**t)
+# log = np.array(env.get_obs)
+# true_overload = np.empty(2)
+#
+# for _ in range(800):
+#     env.wrap.rocket.grav_compensate()
+#     overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
+#     if true_overload.shape[0] == 0:
+#         true_overload = np.hstack((true_overload, overload))
+#     else:
+#         true_overload = np.vstack((true_overload, overload))
+#
+#     possible = env.wrap.findClosestFromLegal(overload)
+#     action_num = env.wrap.overloadsToNumber([possible])[0]
+#
+#     # print("True = ", overload, "Possible = ", possible)
+#     s = env.observation(env.get_obs)
+#     s = torch.tensor(s, device=device, dtype=torch.float)
+#     action_num = torch.argmax(agent(s))
+#
+#     ob, r, done, info = env.step(action_num)
+#
+#     reward += r
+#
+#     log = np.vstack((log, env.get_obs))
+#     print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
+#     if done:
+#         break
+#
+# print("Reward = ", np.round(reward, 4))
+#
+# rocket_log = log[:, :26]
+# la_log = log[:, 26:]
+#
+# graph(rocket_log=rocket_log, la_log=la_log, true_overload=true_overload)
+#
+# drawAnimation()
 
 sys.exit()

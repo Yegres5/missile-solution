@@ -12,14 +12,15 @@ class PreprocessiObs(ObservationWrapper):
         """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
         ObservationWrapper.__init__(self, env)
 
-        self.angle_values = [3, 4, 5, 19, 20, 21, 29, 30, 31]
-        self.coordinates_values = [12, 13, 14]  # rocket(0,1,2) + target coordinates
+        self.angle_values = [3, 4, 5, 29, 30, 31]
+        self.coordinates_values = [0, 1, 2, 26, 27, 28]
         self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
-        self.speed = [6, 18]  # 15, 16, 17 target speed projections
+        self.speed = [6, 32]  # 15, 16, 17 target speed projections
         self.distance = [22]
         self.for_overload = [23, 24]
         self.angle_to_target = [25]
         self.target_speed = [15, 16, 17]
+
         self.min_coor = -5000
         self.max_coor = 20000
         self.state_size = (1, self.observation(self.env.get_obs).shape[0])
@@ -37,19 +38,17 @@ class PreprocessiObs(ObservationWrapper):
         new_obs = np.empty(0)
         for i, elem in enumerate(obs):
             if i in self.coordinates_values:
-                continue
                 elem = np.round(elem, 0)/1000
                 # elem = np.round((elem - self.min_coor)/(self.max_coor - self.min_coor), 5)
             elif i in self.overloads:
                 continue
                 elem = np.round(elem, 2)
             elif i in self.angle_values:
-                continue
-                elem = np.round(np.array(self.transform_to_trigonometry(elem)), 4)
+                elem = np.hstack([elem, np.round(np.array(self.transform_to_trigonometry(elem)), 4)])
             elif i in self.speed:
-                continue
                 elem = np.round(elem)/1000
             elif i in self.distance:
+                continue
                 elem = np.round(elem, 0)/1000
             elif i in self.angle_to_target:
                 elem = np.round(elem, 3)
@@ -57,6 +56,7 @@ class PreprocessiObs(ObservationWrapper):
                 continue
                 elem = elem / 1000
             elif i in self.for_overload:
+                continue
                 if i == 24:
                     elem = np.round(elem, 3)
                 else:
@@ -75,36 +75,42 @@ class PreprocessiObs(ObservationWrapper):
         return self.observation(self.env.reset(**info))
         # self.framebuffer = np.concatenate()
 
-
 class DQNAgent(nn.Module):
-    def __init__(self, state_shape, n_actions, epsilon=0):
+    def __init__(self, state_shape, n_actions, layers_lst, epsilon=0):
         super().__init__()
         self.epsilon = epsilon
         self.n_actions = n_actions
         self.state_shape = state_shape
-        self.const_neurons = int(np.ceil(2 / 3 * state_shape[1] + self.n_actions))
-        print("number of neurons = ", self.const_neurons)
+        # self.const_neurons = 128#int(np.ceil(2 / 3 * state_shape[1] + self.n_actions))
 
-        self.dense1 = nn.Linear(in_features=state_shape[1], out_features=self.const_neurons)
-        self.relu1 = nn.LeakyReLU()
-        self.dense2 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu2 = nn.LeakyReLU()
-        self.dense3 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu3 = nn.LeakyReLU()
-        self.dense4 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu4 = nn.LeakyReLU()
-        self.dense5 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
-        self.relu5 = nn.LeakyReLU()
-        self.dense6 = nn.Linear(in_features=self.const_neurons, out_features=self.n_actions)
+        self.net = nn.Sequential(
+            nn.Linear(in_features=state_shape[1], out_features=layers_lst[1].in_features),
+            *layers_lst,
+            nn.Linear(in_features=layers_lst[-2].out_features, out_features=self.n_actions)
+        )
+
+        # self.dense1 = nn.Linear(in_features=state_shape[1], out_features=self.const_neurons)
+        # self.relu1 = nn.LeakyReLU()
+        # self.dense2 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        # self.relu2 = nn.LeakyReLU()
+        # self.dense3 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        # self.relu3 = nn.LeakyReLU()
+        # self.dense4 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        # self.relu4 = nn.LeakyReLU()
+        # self.dense5 = nn.Linear(in_features=self.const_neurons, out_features=self.const_neurons)
+        # self.relu5 = nn.LeakyReLU()
+        # self.dense6 = nn.Linear(in_features=self.const_neurons, out_features=self.n_actions)
 
     def forward(self, state_t):
         """
         takes agent's observation (tensor), returns qvalues (tensor)
         :param state_t: a batch of 4-frame buffers, shape = [batch_size, 4, h, w]
         """
-        qvalues = self.dense1(state_t)
-        qvalues = self.relu1(qvalues)
-        qvalues = self.dense2(qvalues)
+
+
+        # qvalues = self.dense1(state_t)
+        # qvalues = self.relu1(qvalues)
+        # qvalues = self.dense2(qvalues)
         # qvalues = self.relu2(qvalues)
         # qvalues = self.dense3(qvalues)
         # qvalues = self.relu3(qvalues)
@@ -112,8 +118,9 @@ class DQNAgent(nn.Module):
         # qvalues = self.relu4(qvalues)
         # qvalues = self.dense5(qvalues)
         # qvalues = self.relu5(qvalues)
+        # qvalues = self.dense6(qvalues)
 
-        qvalues = self.dense6(qvalues)
+        qvalues = self.net.forward(state_t)
 
         assert qvalues.requires_grad, "qvalues must be a torch tensor with grad"
         # assert len(
@@ -142,7 +149,6 @@ class DQNAgent(nn.Module):
         should_explore = np.random.choice(
             [0, 1], batch_size, p=[1 - epsilon, epsilon])
         return np.where(should_explore, random_actions, best_actions)
-
 
 def evaluate(env, agent, init_params, n_games=1, greedy=False, t_max=2000):
     """ Plays n_games full games. If greedy, picks actions as argmax(qvalues). Returns mean reward. """
