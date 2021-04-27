@@ -84,7 +84,7 @@ class DQNAgent(nn.Module):
         # self.const_neurons = 128#int(np.ceil(2 / 3 * state_shape[1] + self.n_actions))
 
         self.net = nn.Sequential(
-            nn.Linear(in_features=state_shape[1], out_features=layers_lst[1].in_features),
+            nn.Linear(in_features=state_shape[1], out_features=layers_lst[0].in_features),
             *layers_lst,
             nn.Linear(in_features=layers_lst[-2].out_features, out_features=self.n_actions)
         )

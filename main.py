@@ -142,11 +142,11 @@ class Tester:
         self.target_network.load_state_dict(self.agent.state_dict())
 
         self.timesteps_per_epoch = 100
-        self.batch_size = 400
+        self.batch_size = 500
         self.total_steps = 3 * 10 ** 6
         self.decay_steps = 10 ** 5
 
-        self.opt = torch.optim.Adam(self.agent.parameters(), lr=1e-4)
+        self.opt = torch.optim.Adam(self.agent.parameters(), lr=1e-3)
 
         self.init_epsilon = 0.8
         self.final_epsilon = 0.01
@@ -200,7 +200,7 @@ class Tester:
             # for i in range(s_.shape[0]):
             #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
 
-            loss = compute_td_loss(s_, a_, r_, next_s_, done_, self.agent, self.target_network, gamma=0.95)
+            loss = compute_td_loss(s_, a_, r_, next_s_, done_, self.agent, self.target_network, gamma=0.99)
 
             loss.backward()
             grad_norm = nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
@@ -262,117 +262,146 @@ class Tester:
                     torch.save(self.agent, f"{save_folder}/{step}_agent.pt")
                     plt.close("all")
 
+
 test_list = []
+
 
 def layer(neurons):
     return nn.Linear(neurons, neurons), activation()
 
-activation = nn.LeakyReLU
 
-neurons = 32
+# activation = nn.LeakyReLU
+activation = nn.ReLU
 
-test_list.append([activation(),
-                  *layer(neurons)
-                  ])
+neurons = 256
 
-test_list.append([activation(),
-                  *layer(neurons),
-                  *layer(neurons)
-                  ])
+test_list.append([
+    *layer(neurons)
+])
 
-test_list.append([activation(),
-                  *layer(neurons),
-                  *layer(neurons),
-                  *layer(neurons)
-                  ])
+test_list.append([
+    *layer(neurons),
+    *layer(neurons)
+])
 
-neurons = 64
+test_list.append([
+    *layer(neurons),
+    *layer(neurons),
+    *layer(neurons)
+])
 
-test_list.append([activation(),
-                  *layer(neurons)
-                  ])
+neurons = 512
 
-test_list.append([activation(),
-                  *layer(neurons),
-                  *layer(neurons)
-                  ])
+test_list.append([
+    *layer(neurons)
+])
 
-test_list.append([activation(),
-                  *layer(neurons),
-                  *layer(neurons),
-                  *layer(neurons)
-                  ])
+test_list.append([
+    *layer(neurons),
+    *layer(neurons)
+])
 
-neurons = 128
+test_list.append([
+    *layer(neurons),
+    *layer(neurons),
+    *layer(neurons)
+])
 
-test_list.append([activation(),
-                  *layer(neurons)
-                  ])
+neurons = 1024
 
-test_list.append([activation(),
-                  *layer(neurons),
-                  *layer(neurons)
-                  ])
+test_list.append([
+    *layer(neurons)
+])
 
-test_list.append([activation(),
-                  *layer(neurons),
-                  *layer(neurons),
-                  *layer(neurons)
-                  ])
+test_list.append([
+    *layer(neurons),
+    *layer(neurons)
+])
+
+test_list.append([
+    *layer(neurons),
+    *layer(neurons),
+    *layer(neurons)
+])
+
+# test_list.append([activation(),
+#                   *layer(neurons),
+#                   *layer(neurons),
+#                   *layer(neurons)
+#                   ])
+
+# neurons = 128
+#
+# test_list.append([activation(),
+#                   *layer(neurons)
+#                   ])
+#
+# test_list.append([activation(),
+#                   *layer(neurons),
+#                   *layer(neurons)
+#                   ])
+
+# test_list.append([activation(),
+#                   *layer(neurons),
+#                   *layer(neurons),
+#                   *layer(neurons)
+#                   ])
 
 
 for i, net in enumerate(test_list):
     print(net)
     t1 = Tester(nn_lst=net,
-                buffer_size=10 ** 4)
+                buffer_size=5 * 10 ** 4)
 
     print("Filling buffer")
-    t1.fill_buffer()
-    t1.train(total_steps=2000, decay=1000,
-             save_folder=f"{os.getcwd()}/log/9/{int((len(net)-1)/2)}_{net[1].in_features}")
+    # t1.fill_buffer()
+    t1.train(total_steps=8000, decay=1000,
+             save_folder=f"{os.getcwd()}/log/13/{i}/")  # {int((len(net)-1)/2)}_{net[1].in_features}")
 
+agent = torch.load(f"{os.getcwd()}/log/10/1_1024/2000_agent.pt")
 
+env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
+t = reset_params()
+# t["t_euler"][1] = -t["t_euler"][1]
 
-# t = reset_params()
-# # t["t_euler"][1] = -t["t_euler"][1]
-#
-# reward = 0
-# env.reset(**t)
-# log = np.array(env.get_obs)
-# true_overload = np.empty(2)
-#
-# for _ in range(800):
-#     env.wrap.rocket.grav_compensate()
-#     overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
-#     if true_overload.shape[0] == 0:
-#         true_overload = np.hstack((true_overload, overload))
-#     else:
-#         true_overload = np.vstack((true_overload, overload))
-#
-#     possible = env.wrap.findClosestFromLegal(overload)
-#     action_num = env.wrap.overloadsToNumber([possible])[0]
-#
-#     # print("True = ", overload, "Possible = ", possible)
-#     s = env.observation(env.get_obs)
-#     s = torch.tensor(s, device=device, dtype=torch.float)
-#     action_num = torch.argmax(agent(s))
-#
-#     ob, r, done, info = env.step(action_num)
-#
-#     reward += r
-#
-#     log = np.vstack((log, env.get_obs))
-#     print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
-#     if done:
-#         break
-#
-# print("Reward = ", np.round(reward, 4))
-#
-# rocket_log = log[:, :26]
-# la_log = log[:, 26:]
-#
-# graph(rocket_log=rocket_log, la_log=la_log, true_overload=true_overload)
-#
-# drawAnimation()
+reward = 0
+env.reset(**t)
+log = np.array(env.get_obs)
+true_overload = np.empty(2)
+
+for _ in range(800):
+    env.wrap.rocket.grav_compensate()
+    overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
+    if true_overload.shape[0] == 0:
+        true_overload = np.hstack((true_overload, overload))
+    else:
+        true_overload = np.vstack((true_overload, overload))
+
+    possible = env.wrap.findClosestFromLegal(overload)
+    action_num = env.wrap.overloadsToNumber([possible])[0]
+
+    # print("True = ", overload, "Possible = ", possible)
+    s = env.observation(env.get_obs)
+    s = torch.tensor(s, device=device, dtype=torch.float)
+    # action_num = torch.argmax(agent(s))
+
+    ob, r, done, info = env.step(action_num)
+
+    reward += r
+    print(r)
+
+    log = np.vstack((log, env.get_obs))
+    print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
+    if done:
+        break
+
+print("Reward = ", np.round(reward, 4))
+
+rocket_log = log[:, :26]
+la_log = log[:, 26:]
+
+graph(rocket_log=rocket_log, la_log=la_log, true_overload=true_overload)
+
+drawAnimation()
 
 sys.exit()
