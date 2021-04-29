@@ -75,55 +75,28 @@ def reset_params(count=10000):
 
 """ Expert play """
 
+# def layer(neu):
+#     return nn.Linear(neu, neu), activation()
+
+
+env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
+
+state_shape = env.observation_space.shape
+n_actions = env.action_space.n
+#
+# agent = DQNAgent(state_shape, n_actions, layers_lst=[*layer(30)], epsilon=1).to(device)
+
+# agent = torch.load(f"{os.getcwd()}/log/14/5/40000_agent.pt")
+# r = []
 # exp_replay = ReplayBuffer(20*10 ** 4)
 # for i in range(3000):
 #     """ Ram consumable maybe check for available RAM """
-#     play_and_record(initial_state=reset_params,
-#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=False, prob_exp_random=0)
+#     rew, _ = play_and_record(initial_state=reset_params,
+#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=800, expert=False, prob_exp_random=0.3)
+#     r.append(rew)
 #     if len(exp_replay) == 2*10 ** 4:
 #         break
-#
-# debug = True
-# loss_log = []
-# rew_log = []
-#
-# for i in range(100000000):
-#     # train
-#     play_and_record(initial_state=reset_params(),
-#                     agent=agent, env=env, exp_replay=exp_replay, n_steps=50, expert=True, prob_exp_random=0)
-#
-#     s_, a_, r_, next_s_, done_ = exp_replay.sample(256)
-#
-#     # for i in range(s_.shape[0]):
-#     #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
-#
-#     loss = compute_td_loss(s_, a_, r_, next_s_, done_, agent, target_network)
-#
-#     loss.backward()
-#     grad_norm = nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
-#     opt.step()
-#     opt.zero_grad()
-#
-#     stop = False
-#
-#     if stop:
-#         break
-#
-#     if i % 15 == 0:
-#         # Load agent weights into target_network
-#         loss_log.append(loss)
-#         target_network.load_state_dict(agent.state_dict())
-#         if i % 4*15 == 0:
-#             rew_log.append(evaluate(
-#                 make_env(seed=step, rocket_info=rocket_info, target_info=target_info),
-#                 agent, n_games=3, greedy=True, **reset_params()))
-#             print(rew_log[-1])
-#
-#         print(loss_log[-1])#, rew_log[-1])
 
-
-# if np.floor(i / 30) == 20:
-#     break
 
 """ Train loop """
 
@@ -141,19 +114,19 @@ class Tester:
         self.target_network = DQNAgent(self.state_shape, self.n_actions, layers_lst=nn_lst).to(device)
         self.target_network.load_state_dict(self.agent.state_dict())
 
-        self.timesteps_per_epoch = 100
-        self.batch_size = 500
+        self.timesteps_per_epoch = 50#100
+        self.batch_size = 2000
         self.total_steps = 3 * 10 ** 6
         self.decay_steps = 10 ** 5
 
         self.opt = torch.optim.Adam(self.agent.parameters(), lr=1e-3)
 
-        self.init_epsilon = 0.8
-        self.final_epsilon = 0.01
+        self.init_epsilon = 0.5
+        self.final_epsilon = 0.05
 
         self.loss_freq = 10
         self.refresh_target_network_freq = 50
-        self.eval_freq = 50
+        self.eval_freq = 100
 
         self.max_grad_norm = 50
 
@@ -189,6 +162,10 @@ class Tester:
                 except KeyboardInterrupt:
                     pass
 
+            # if step > 5000:
+            #     for g in self.opt.param_groups:
+            #         g["lr"] = 1e-4
+
             self.agent.epsilon = utils.linear_decay(self.init_epsilon, self.final_epsilon, step, decay)
 
             # all_rew = exp_replay.sample(len(exp_replay))[2]
@@ -200,7 +177,7 @@ class Tester:
             # for i in range(s_.shape[0]):
             #     agent.update(s_[i], a_[i], r_[i], next_s_[i])
 
-            loss = compute_td_loss(s_, a_, r_, next_s_, done_, self.agent, self.target_network, gamma=0.99)
+            loss = compute_td_loss(s_, a_, r_, next_s_, done_, self.agent, self.target_network, gamma=0.999)
 
             loss.backward()
             grad_norm = nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
@@ -266,99 +243,40 @@ class Tester:
 test_list = []
 
 
-def layer(neurons):
-    return nn.Linear(neurons, neurons), activation()
+def layer(in_nn, out_nn):
+    return nn.Linear(in_nn, out_nn), activation()
 
 
 # activation = nn.LeakyReLU
 activation = nn.ReLU
 
-neurons = 256
 
-test_list.append([
-    *layer(neurons)
-])
+neurons = [64, 128, 256, 512, 1024, 2048, 4096]
 
-test_list.append([
-    *layer(neurons),
-    *layer(neurons)
-])
-
-test_list.append([
-    *layer(neurons),
-    *layer(neurons),
-    *layer(neurons)
-])
-
-neurons = 512
-
-test_list.append([
-    *layer(neurons)
-])
-
-test_list.append([
-    *layer(neurons),
-    *layer(neurons)
-])
-
-test_list.append([
-    *layer(neurons),
-    *layer(neurons),
-    *layer(neurons)
-])
-
-neurons = 1024
-
-test_list.append([
-    *layer(neurons)
-])
-
-test_list.append([
-    *layer(neurons),
-    *layer(neurons)
-])
-
-test_list.append([
-    *layer(neurons),
-    *layer(neurons),
-    *layer(neurons)
-])
-
-# test_list.append([activation(),
-#                   *layer(neurons),
-#                   *layer(neurons),
-#                   *layer(neurons)
-#                   ])
-
-# neurons = 128
-#
-# test_list.append([activation(),
-#                   *layer(neurons)
-#                   ])
-#
-# test_list.append([activation(),
-#                   *layer(neurons),
-#                   *layer(neurons)
-#                   ])
-
-# test_list.append([activation(),
-#                   *layer(neurons),
-#                   *layer(neurons),
-#                   *layer(neurons)
-#                   ])
+for i in neurons:
+    test_list.append([
+        *layer(i, i),
+        *layer(i, i),
+        *layer(i, i),
+        *layer(i, i)
+    ])
 
 
 for i, net in enumerate(test_list):
-    print(net)
+    # print(net)
     t1 = Tester(nn_lst=net,
-                buffer_size=5 * 10 ** 4)
+                buffer_size=3*10 ** 4)
 
-    print("Filling buffer")
-    # t1.fill_buffer()
-    t1.train(total_steps=8000, decay=1000,
-             save_folder=f"{os.getcwd()}/log/13/{i}/")  # {int((len(net)-1)/2)}_{net[1].in_features}")
+    # print("Filling buffer")
+    # temp_agent = torch.load(f"{os.getcwd()}/log/14/4/15000_agent.pt")
+    # t1.agent.load_state_dict(temp_agent.state_dict())
+    t1.fill_buffer()
+    t1.train(total_steps=20000, decay=3000,
+             save_folder=f"{os.getcwd()}/log/14/4/{net[0].in_features}")  # {int((len(net)-1)/2)}_{net[1].in_features}")
 
-agent = torch.load(f"{os.getcwd()}/log/10/1_1024/2000_agent.pt")
+# 2 5
+
+agent = torch.load(f"{os.getcwd()}/log/13/5/8000_agent.pt")
 
 env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
 t = reset_params()
@@ -383,7 +301,7 @@ for _ in range(800):
     # print("True = ", overload, "Possible = ", possible)
     s = env.observation(env.get_obs)
     s = torch.tensor(s, device=device, dtype=torch.float)
-    # action_num = torch.argmax(agent(s))
+    action_num = torch.argmax(agent(s))
 
     ob, r, done, info = env.step(action_num)
 
