@@ -5,16 +5,13 @@ from gym.core import ObservationWrapper
 from gym.spaces import Box
 import torch.nn as nn
 import os
-import matplotlib.pyplot as plt
 import itertools
-import matplotlib as mpl
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import multiprocessing
-import time
 from torch.utils.tensorboard import SummaryWriter
 from itertools import product
-from draw_animation import drawAnimation
 import yappi
+from profiler import getDataAbout
+import sys
 
 
 def polarToCart(r, phi):
@@ -30,7 +27,7 @@ def get_rand(min_v, max_v):
 
 def get_rand_ini():
     angle = get_rand(np.deg2rad(-90), np.deg2rad(90))
-    coord_angle = 0#get_rand(np.deg2rad(-45), np.deg2rad(45))
+    coord_angle = 0  # get_rand(np.deg2rad(-45), np.deg2rad(45))
     distance = get_rand(18000, 18000)
     la_coord = polarToCart(distance, coord_angle)
     maneuver = np.random.randint(3, 4)
@@ -39,12 +36,6 @@ def get_rand_ini():
              "la_coord": [la_coord[0], 0, la_coord[1]],
              "maneuver": maneuver
              }]
-
-    # "r_euler": [0, 0, 0],
-    # "t_euler": [0, np.deg2rad(-i[1]), 0],
-    # "la_coord": [i[0], 0, 0],
-    # "maneuver": i[3],
-    # "coefficient": i[2]
 
 
 def static_vars(**kwargs):
@@ -73,123 +64,17 @@ class PreprocessiObs(ObservationWrapper):
         """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
         ObservationWrapper.__init__(self, env)
 
-        self.angle_values = [3, 4, 5, 29, 30, 31]
-        self.coordinates_values = [0, 1, 2, 26, 27, 28]
-        self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
-        self.speed = [6, 32]  # 15, 16, 17 target speed projections
-        self.relative_speed = [6]
-        self.distance = [22]
-        self.for_overload = [23, 24]
-        self.angle_to_target = [25]
-        self.target_speed = [15, 16, 17]
+        # self.angle_values = [3, 4, 5, 29, 30, 31]
+        # self.coordinates_values = [0, 1, 2, 26, 27, 28]
+        # self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
+        # self.speed = [6, 32]  # 15, 16, 17 target speed projections
+        # self.relative_speed = [6]
+        # self.distance = [22]
+        # self.for_overload = [23, 24]
+        # self.angle_to_target = [25]
+        # self.target_speed = [15, 16, 17]
 
-        self.min_coor = -25000
-        self.max_coor = 25000
-
-        self.min_rad = -np.pi
-        self.max_rad = np.pi
-
-        self.min_trig = -1
-        self.max_trig = 1
-
-        self.min_speed = 200
-        self.max_speed = 900
-
-        self.state_size = (1, self.observation(self.env.get_obs).shape[0])
-        self.observation_space = Box(low=-np.inf, high=np.inf, shape=self.state_size)
-        self.framebuffer = np.zeros(self.state_size[1], 'float32')
-
-    def observation(self, obs):
-        new_obs = np.empty(0)
-
-        all_index = self.coordinates_values + self.speed + \
-                    self.distance + self.angle_to_target + [self.for_overload[0]]
-
-        minus = np.empty(len(obs))
-        div = np.empty(len(obs))
-        div.fill(1)
-
-        minus[self.coordinates_values] = 0
-        minus[self.speed] = self.min_speed
-        minus[self.distance] = 0
-        minus[self.angle_to_target] = self.min_rad
-        minus[self.for_overload[0]] = 0
-
-        div[self.coordinates_values] = 1000
-        div[self.speed] = self.max_speed - self.min_speed
-        div[self.distance] = 18000
-        div[self.angle_to_target] = (self.max_rad - self.min_rad)
-        # div[self.for_overload[0]] = 1
-
-        angles = np.reshape([np.hstack([angle, np.array(self.transform_to_trigonometry(angle))])
-                             for angle in obs[self.angle_values]], -1)
-        rad_norm = self.max_rad - self.min_rad
-        trig_norm = self.max_trig - self.min_trig
-        angles[0:angles.shape[0]:3] = (angles[0:angles.shape[0]:3] - self.min_rad) / rad_norm - 0.5
-        angles[1:angles.shape[0]:3] = (angles[1:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
-        angles[2:angles.shape[0]:3] = (angles[2:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
-
-        additional = (obs[self.relative_speed] - obs[self.target_speed[0]]) / self.max_speed
-
-        data_prep = ((obs - minus) / div)
-        data_prep[self.angle_to_target] -= 0.5
-
-        res = np.hstack([data_prep[all_index], angles, additional])
-        # return res.astype("float32")
-
-        for i, elem in enumerate(obs):
-            if i in self.coordinates_values:
-                elem = np.round(elem, 0) / 1000  # 1000
-            elif i in self.overloads:
-                continue
-                elem = np.round(elem, 2)
-            elif i in self.angle_values:
-                elem = np.hstack([elem, np.array(self.transform_to_trigonometry(elem))])  # 4
-                elem[0] = (elem[0] - self.min_rad) / (self.max_rad - self.min_rad) - 0.5
-                elem[1] = (elem[1] - self.min_trig) / (self.max_trig - self.min_trig) - 0.5
-                elem[2] = (elem[2] - self.min_trig) / (self.max_trig - self.min_trig) - 0.5
-            elif i in self.speed:
-                elem = (elem - self.min_speed) / (self.max_speed - self.min_speed)  # 0
-            elif i in self.relative_speed:
-                elem = (elem - obs(self.target_speed[0])) / self.max_speed
-            elif i in self.distance:
-                elem = elem / 18000  # 18000
-            elif i in self.angle_to_target:
-                elem = (elem - self.min_rad) / (self.max_rad - self.min_rad) - 0.5  # 3
-            elif i in self.target_speed:
-                continue
-                elem = elem / 1000
-            elif i in self.for_overload:
-                if i != 24:
-                    # print(elem)
-                    abs_max = 1.4
-                    # elem = np.hstack([elem, np.sign(elem)])
-                    # elem = (elem - (-abs_max))/(abs_max - (-abs_max)) - 0.5 #4
-                else:
-                    continue
-            # elif i in [36]:
-            #     elem = elem
-            else:
-                continue
-
-            new_obs = np.hstack((new_obs, elem))  # Add embedings for manouver
-            print(f"New elem with index {i}, total shape {new_obs.shape}")
-
-        return new_obs.astype('float32')
-
-    def transform_to_trigonometry(self, angle):
-        return [np.sin(angle), np.cos(angle)]
-
-    def reset(self, **info):
-        return self.observation(self.env.reset(**info))
-        # self.framebuffer = np.concatenate()
-
-
-class OldPreprorcessor(ObservationWrapper):
-    def __init__(self, env):
-        """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
-        ObservationWrapper.__init__(self, env)
-
+        # From old one
         self.angle_values = [3, 4, 5, 29, 30, 31]
         self.coordinates_values = [0, 1, 2, 26, 27, 28]
         self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
@@ -217,6 +102,65 @@ class OldPreprorcessor(ObservationWrapper):
         self.framebuffer = np.zeros(self.state_size[1], 'float32')
 
     def observation(self, obs):
+        # primes = [  1,   2,   3,   5,   7,  11,  13,  17,  19,  23,  29,  31,  37,
+        #           41,  43,  47,  53,  59,  61,  67,  71,  73,  79,  83,  89,  97,
+        #           101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163,
+        #           167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233,
+        #           239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311,
+        #           313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389,
+        #           397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463,
+        #           467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563,
+        #           569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641,
+        #           643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727,
+        #           733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821,
+        #           823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907,
+        #           911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997]
+        #
+        # for index, value in enumerate(obs):
+        #     obs[index] = primes[index]
+        #
+        # self.relative_speed = [6]
+        #
+        # all_index = self.coordinates_values + self.speed + \
+        #             self.distance + self.angle_to_target + [self.for_overload[0]]
+        #
+        # minus = np.empty(len(obs))
+        # div = np.empty(len(obs))
+        # div.fill(1)
+        #
+        # minus[self.coordinates_values] = 0
+        # minus[self.speed] = self.min_speed
+        # minus[self.distance] = 0
+        # minus[self.angle_to_target] = self.min_rad
+        # minus[self.for_overload[0]] = 0
+        #
+        # div[self.coordinates_values] = 1000
+        # div[self.speed] = self.max_speed - self.min_speed
+        # div[self.distance] = 18000
+        # div[self.angle_to_target] = (self.max_rad - self.min_rad)
+        #
+        # angles = np.reshape([np.hstack([angle, np.array(self.transform_to_trigonometry(angle))])
+        #                      for angle in obs[self.angle_values]], -1)
+        # rad_norm = self.max_rad - self.min_rad
+        # trig_norm = self.max_trig - self.min_trig
+        # angles[0:angles.shape[0]:3] = (angles[0:angles.shape[0]:3] - self.min_rad) / rad_norm - 0.5
+        # angles[1:angles.shape[0]:3] = (angles[1:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
+        # angles[2:angles.shape[0]:3] = (angles[2:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
+        #
+        # additional = (obs[self.relative_speed] - obs[self.target_speed[0]]) / self.max_speed
+        #
+        # data_prep = ((obs - minus) / div)
+        # data_prep[self.angle_to_target] -= 0.5
+        #
+        # res = np.hstack([data_prep[all_index], angles, additional]).astype("float64")
+        #
+        # reorder = [0, 1, 2, 11, 12, 13, 14, 15, 16, 17, 18, 19, 6, 29, 8, 10, 9,
+        #            3, 4, 5, 20, 21, 22, 23, 24, 25, 26, 27, 28, 7]
+        #
+        # res = res[reorder]
+        # return res.astype("float32")
+
+        self.relative_speed = [15]
         new_obs = np.empty(0)
         for i, elem in enumerate(obs):
             if i in self.coordinates_values:
@@ -255,6 +199,7 @@ class OldPreprorcessor(ObservationWrapper):
 
             new_obs = np.hstack((new_obs, elem))  # Add embedings for manouver
 
+        # assert np.alltrue(np.isclose(res, new_obs))
         return new_obs.astype('float32')
 
     def transform_to_trigonometry(self, angle):
@@ -337,27 +282,6 @@ def writeGameToFile(env, agent, init, expert=False, exp_coef=5):
     return score
 
 
-def getLogs():
-    agent_log = []
-    exp_log_1 = []
-    exp_log_3 = []
-    exp_log_5 = []
-
-    for i in range(100):
-        print(i)
-        init = reset_params()
-        agent_log.append(play(env, agent, init, False, 0, 3))
-        exp_log_1.append(play(env, agent, init, True, 0, 1))
-        exp_log_3.append(play(env, agent, init, True, 0, 3))
-        exp_log_5.append(play(env, agent, init, True, 0, 5))
-
-    agent_log = np.array(agent_log)
-    exp_log_1 = np.array(exp_log_1)
-    exp_log_3 = np.array(exp_log_3)
-    exp_log_5 = np.array(exp_log_5)
-    return agent_log, exp_log_1, exp_log_3, exp_log_5
-
-
 def getCombinations(distances=(15000, 25000, 10000), angles=(-60, 60, 120), coefficients=(0, 1, 3),
                     maneuvers=(0, 1)):
     statistics = []
@@ -373,144 +297,6 @@ def getCombinations(distances=(15000, 25000, 10000), angles=(-60, 60, 120), coef
         "maneuver": i[3],
         "coefficient": i[2]
     } for i in combinations]
-
-
-def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
-    # fig = plt.figure(figsize=(8, 8))
-
-    # ax1 = fig.add_subplot(2, 1, 1)
-    # ax2 = fig.add_subplot(2, 1, 2)
-
-    fig, ax = plt.subplots()
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes('right', size='5%', pad=0.05)
-
-    indexes_maneuver = np.array([i["maneuver"] for i in stats[:, 0]]) == maneuver
-    indexes = np.array([i["coefficient"] for i in stats[:, 0]]) == coefficient
-    indexes_neural = np.array([i["coefficient"] for i in stats[:, 0]]) == 0
-
-    indexes = indexes_maneuver & indexes
-    indexes_neural = indexes_maneuver & indexes_neural
-
-    distances = [i["la_coord"][0] for i in stats[indexes, 0]]
-    angles = [np.round(np.rad2deg(i["t_euler"][1])) for i in stats[indexes, 0]]
-
-    hit_or_miss = stats[indexes, 1].astype("float64")
-    hit_or_miss[hit_or_miss < 0] = 0
-
-    cmap = mpl.cm.bwr
-    min_score, max_score = None, None
-
-    if graphType == "Score nonbin":  # nope
-        scores = stats[indexes, 1].astype("float64")
-    if graphType == "Score bin":
-        scores = stats[indexes, 1].astype("float64")
-        scores[scores < 0] = 0
-    elif graphType == "Distance":  # nope
-        scores = [i["Distance"] for i in stats[indexes, 3]]
-        min_score, max_score = 100, 1000
-    elif graphType == "Distance scaled":
-        cmap = mpl.cm.coolwarm
-        scores = np.array([i["Distance"] for i in stats[indexes, 3]], dtype=np.float)
-        scores[scores < 100] = 100
-        j, c, i, q = -1 / 2, 1000, 1500, -2
-        scores = j * (np.tanh(1 / c * (scores - i)) + (q + 1))
-        min_score, max_score = 0, 1
-    elif graphType == "Time":
-        scores = stats[indexes, 2].astype("float64")
-    elif graphType == "Time if hit":
-        scores = stats[indexes, 2].astype("float64")
-        scores[hit_or_miss == 0] = 600
-    elif graphType == "Speed":
-        scores = np.array([i["Final speed"] for i in stats[indexes, 3]])
-        min_score, max_score = 200, 900
-    elif graphType == "Speed if hit":
-        scores = np.array([i["Final speed"] for i in stats[indexes, 3]])
-        scores = scores * hit_or_miss
-        min_score, max_score = 200, 900
-    elif graphType == "PN vs NN Distance":  # nope
-        pn_dist = [i["Distance"] for i in stats[indexes, 3]]
-        nn_dist = [i["Distance"] for i in stats[indexes_neural, 3]]
-        scores = [1 if nn_d < pn_d else 0 for pn_d, nn_d in zip(pn_dist, nn_dist)]
-    elif graphType == "PN vs NN Distance diff":
-        pn_dist = np.array([i["Distance"] for i in stats[indexes, 3]])
-        nn_dist = np.array([i["Distance"] for i in stats[indexes_neural, 3]])
-
-        scores = nn_dist - pn_dist
-        scores = 1 / scores
-        # min_score, max_score = -2000, 2000
-
-    elif graphType == "PN vs NN Accuracy":
-        cmap = mpl.cm.brg
-
-        pn_score = stats[indexes, 1].astype("float64")
-        nn_score = stats[indexes_neural, 1].astype("float64")
-
-        scores = []
-        for pn_d, nn_d in zip(pn_score, nn_score):
-            if pn_d < 0 and nn_d < 0:
-                score = 0
-            elif pn_d < 0 and nn_d > 0:
-                score = 40
-            elif pn_d > 0 and nn_d < 0:
-                score = 60
-            elif pn_d > 0 and nn_d > 0:
-                score = 100
-
-            scores.append(score)
-        min_score, max_score = 0, 100
-
-    elif graphType == "Fancy":
-        cmap = mpl.cm.hot
-        speed = np.array([i["Final speed"] for i in stats[indexes, 3]])
-        time = stats[indexes, 2].astype("float64")
-        scores = (900 - speed) / time
-        scores[hit_or_miss == 0] = 0
-        min_score, max_score = 0, 3
-
-    elif graphType == "PN vs NN Fancy":
-        cmap = mpl.cm.gist_ncar
-
-        pn_score = stats[indexes, 1].astype("float64")
-        nn_score = stats[indexes_neural, 1].astype("float64")
-
-        speed = np.array([i["Final speed"] for i in stats[indexes, 3]])
-        time = stats[indexes, 2].astype("float64")
-        scores_pn = (900 - speed) / time
-        scores_pn[hit_or_miss == 0] = 0
-
-        speed = np.array([i["Final speed"] for i in stats[indexes_neural, 3]])
-        time = stats[indexes_neural, 2].astype("float64")
-        scores_nn = (900 - speed) / time
-        scores_nn[hit_or_miss == 0] = 0
-
-        scores = []
-        for i, (pn_d, nn_d) in enumerate(zip(pn_score, nn_score)):
-            if pn_d < 0 and nn_d < 0:
-                score = 500  # white
-            elif pn_d < 0 and nn_d > 0:
-                score = 370  # red
-            elif pn_d > 0 and nn_d < 0:
-                score = 90  # cyan
-            elif pn_d > 0 and nn_d > 0:
-                if scores_nn[i] > scores_pn[i]:
-                    score = 300  # yellow
-                else:
-                    score = 50  # blue
-            scores.append(score)
-
-        min_score, max_score = 0, 500
-
-    if not (min_score or max_score):
-        min_score, max_score = min(scores), max(scores)
-
-    norm = mpl.colors.Normalize(vmin=min_score, vmax=max_score)
-
-    im = ax.hist2d(angles, distances, weights=scores, norm=norm, cmap=cmap,
-                   bins=[len(set(angles)), len(set(distances))])
-
-    fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
-                 cax=cax, orientation='vertical')
 
 
 def playThreaded(env_agent, ini, progress):
@@ -563,25 +349,6 @@ def playThreaded(env_agent, ini, progress):
     return score, steps, info
 
 
-def returnValue(list_v, value):
-    # print(f"Recieved_{value}: {list_v}")
-    elem = None
-    while not elem:
-        while not len(list_v):
-            # print(f"Waiting_{value}")
-            pass
-        try:
-            elem = list_v.pop()
-        except IndexError:
-            pass
-
-    # print(f"Working_{value}")
-    time.sleep(3)  # get_rand(0, 1))
-    list_v.append(elem)
-    print(f"Done_{value}")
-    return value
-
-
 def getData(load_path="new_version_3l_aero_big_boy(4_1)/23500", distances=(10000, 30000, 1000), angles=(-90, 90, 10),
             maneuvers=tuple([2, 3, 4]), coefficients=tuple([0, 3])):
     env_agent = []
@@ -619,12 +386,7 @@ def getData(load_path="new_version_3l_aero_big_boy(4_1)/23500", distances=(10000
 
 
 def teachArch(num_games, network_structure, params):
-    # print("--------------TEACH--------------")
-    # yappi.set_clock_type("cpu")
-    # yappi.start()
-
     main_stream, advantage_stream, value_stream = network_structure
-    print(network_structure)
     batch_size, mem_size, gamma, epsilon, lr, eps_min, decay, replace = \
         params["batch_size"], params["mem_size"], params["gamma"], params["epsilon"], \
         params["lr"], params["eps_min"], params["decay"], params["replace"]
@@ -645,8 +407,8 @@ def teachArch(num_games, network_structure, params):
     env = gym.make('missile_env:missile-env-v0')
 
     env.seed(seed=42)
-    # env = PreprocessiObs(env)
-    env = OldPreprorcessor(env)
+    env = PreprocessiObs(env)
+    # env = OldPreprorcessor(env)
 
     state_shape = env.observation_space.shape[1]
     n_actions = env.action_space.n
@@ -743,7 +505,8 @@ def testerGen(main_stream, advantage_stream, value_stream, path):
     env = gym.make('missile_env:missile-env-v0')
 
     env.seed(seed=42)
-    env = OldPreprorcessor(env)
+    env = PreprocessiObs(env)
+    # env = OldPreprorcessor(env)
 
     state_shape = env.observation_space.shape[1]
     n_actions = env.action_space.n
@@ -764,22 +527,63 @@ def testerGen(main_stream, advantage_stream, value_stream, path):
     return env, agent
 
 
-if __name__ == '__main__':
+def profile(names, postfix="", printToFile=True):
+    sort_list = ['tsub', 'ttot', 'tavg']
+    mode = 'run'
 
+    gettrace = getattr(sys, 'gettrace', None)
+    if gettrace is not None:
+        if gettrace():
+            mode = 'debug'
+
+    stats = getDataAbout(names, file_name=f"{mode}_nonOptimized")
+
+    if printToFile:
+        for sort_by in sort_list:
+            file_name = f"{mode}_nonOptimized_{sort_by}_{postfix}"
+            if file_name:
+                with open(f"profile/{file_name}.txt", 'w') as f:
+                    f.write(str(names))
+                    stats.sort(sort_by).print_all(out=f)
+
+    return getDataAbout(names)
+
+
+if __name__ == '__main__':
     learning_params = list(product_dict(batch_size=[64, 128, 256], mem_size=[5000], gamma=[0.999], epsilon=[1],
                                         lr=[1e-5, 1e-6, 1e-7], eps_min=[0.05], decay=[300 * 700], replace=[50]))
 
     nn_params = list(product([3], [0], [1], [16]))
     # path = f"checkpoints/May27_15-23-45_MacBook-Pro-Evgenij.local neurons=16, main_layers=4, advantage_layers=0, value_layers=0, batch_size=128, mem_size=10000, gamma=0.999, epsilon=1, lr=1e-07, eps_min=0.05, decay=210000, replace=50/1125"
-    # path = f"new_version_3l_aero_big_boy(4_1)/23500"
-    # env, agent = testerGen(*networkParts(3, 0, 1, 16), path)
+    path = f"new_version_3l_aero_big_boy(4_1)/23500"
+    env, agent = testerGen(*networkParts(3, 0, 1, 16), path)
 
     # writeGameToFile(env, agent, reset_params(), False, 3)
 
+    # missile_env.envs.flying_objects.ALL_POSSIBLE_ACTIONS
+
+    names = [
+        '__main__',
+        'missile_env.envs.flying_objects',
+        'missile_env.envs.missileenv_0',
+        'missile_env.envs.wrapper',
+        'dueling_ddqn_torch',
+        'torch',
+        'numpy'
+    ]
+
     yappi.set_clock_type("cpu")
     yappi.start()
-    teachArch(2, networkParts(3,0,1,16), learning_params[0])
+    teachArch(1, networkParts(3, 0, 1, 16), learning_params[0]) # 5
     yappi.stop()
+
+    profiler_data = profile([], postfix="noNames")
+    # profile(names, postfix="withNames")
+
+    z = 0
+
+
+
 
     # with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
     #     with multiprocessing.Manager() as manager:
