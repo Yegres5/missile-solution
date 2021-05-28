@@ -2,7 +2,7 @@ import yappi
 import sys
 
 
-def getDataAbout(module_list_names):
+def getDataAbout(module_list_names, threads=1):
 
     modules = [sys.modules.get(module_name) for module_name in module_list_names]
 

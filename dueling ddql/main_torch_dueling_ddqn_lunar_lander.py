@@ -12,6 +12,8 @@ from itertools import product
 import yappi
 from profiler import getDataAbout
 import sys
+import threading
+import concurrent
 
 
 def polarToCart(r, phi):
@@ -64,22 +66,11 @@ class PreprocessiObs(ObservationWrapper):
         """A gym wrapper that crops, scales image into the desired shapes and grayscales it."""
         ObservationWrapper.__init__(self, env)
 
-        # self.angle_values = [3, 4, 5, 29, 30, 31]
-        # self.coordinates_values = [0, 1, 2, 26, 27, 28]
-        # self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
-        # self.speed = [6, 32]  # 15, 16, 17 target speed projections
-        # self.relative_speed = [6]
-        # self.distance = [22]
-        # self.for_overload = [23, 24]
-        # self.angle_to_target = [25]
-        # self.target_speed = [15, 16, 17]
-
-        # From old one
         self.angle_values = [3, 4, 5, 29, 30, 31]
         self.coordinates_values = [0, 1, 2, 26, 27, 28]
         self.overloads = [7, 8, 9, 10, 11]  # 10,11 for navigation Ny, Nz (last values?)
         self.speed = [6, 32]  # 15, 16, 17 target speed projections
-        self.relative_speed = [15]
+        self.relative_speed = [6]
         self.distance = [22]
         self.for_overload = [23, 24]
         self.angle_to_target = [25]
@@ -102,105 +93,44 @@ class PreprocessiObs(ObservationWrapper):
         self.framebuffer = np.zeros(self.state_size[1], 'float32')
 
     def observation(self, obs):
-        # primes = [  1,   2,   3,   5,   7,  11,  13,  17,  19,  23,  29,  31,  37,
-        #           41,  43,  47,  53,  59,  61,  67,  71,  73,  79,  83,  89,  97,
-        #           101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163,
-        #           167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233,
-        #           239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311,
-        #           313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389,
-        #           397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463,
-        #           467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563,
-        #           569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641,
-        #           643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727,
-        #           733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821,
-        #           823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907,
-        #           911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997]
-        #
-        # for index, value in enumerate(obs):
-        #     obs[index] = primes[index]
-        #
-        # self.relative_speed = [6]
-        #
-        # all_index = self.coordinates_values + self.speed + \
-        #             self.distance + self.angle_to_target + [self.for_overload[0]]
-        #
-        # minus = np.empty(len(obs))
-        # div = np.empty(len(obs))
-        # div.fill(1)
-        #
-        # minus[self.coordinates_values] = 0
-        # minus[self.speed] = self.min_speed
-        # minus[self.distance] = 0
-        # minus[self.angle_to_target] = self.min_rad
-        # minus[self.for_overload[0]] = 0
-        #
-        # div[self.coordinates_values] = 1000
-        # div[self.speed] = self.max_speed - self.min_speed
-        # div[self.distance] = 18000
-        # div[self.angle_to_target] = (self.max_rad - self.min_rad)
-        #
-        # angles = np.reshape([np.hstack([angle, np.array(self.transform_to_trigonometry(angle))])
-        #                      for angle in obs[self.angle_values]], -1)
-        # rad_norm = self.max_rad - self.min_rad
-        # trig_norm = self.max_trig - self.min_trig
-        # angles[0:angles.shape[0]:3] = (angles[0:angles.shape[0]:3] - self.min_rad) / rad_norm - 0.5
-        # angles[1:angles.shape[0]:3] = (angles[1:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
-        # angles[2:angles.shape[0]:3] = (angles[2:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
-        #
-        # additional = (obs[self.relative_speed] - obs[self.target_speed[0]]) / self.max_speed
-        #
-        # data_prep = ((obs - minus) / div)
-        # data_prep[self.angle_to_target] -= 0.5
-        #
-        # res = np.hstack([data_prep[all_index], angles, additional]).astype("float64")
-        #
-        # reorder = [0, 1, 2, 11, 12, 13, 14, 15, 16, 17, 18, 19, 6, 29, 8, 10, 9,
-        #            3, 4, 5, 20, 21, 22, 23, 24, 25, 26, 27, 28, 7]
-        #
-        # res = res[reorder]
-        # return res.astype("float32")
+        obs = np.array(obs)
+        all_index = self.coordinates_values + self.speed + self.distance + self.angle_to_target + [self.for_overload[0]]
 
-        self.relative_speed = [15]
-        new_obs = np.empty(0)
-        for i, elem in enumerate(obs):
-            if i in self.coordinates_values:
-                elem = np.round(elem, 0) / 1000
-            elif i in self.overloads:
-                continue
-                elem = np.round(elem, 2)
-            elif i in self.angle_values:
-                elem = np.hstack([elem, np.array(self.transform_to_trigonometry(elem))])  # 4
-                elem[0] = (elem[0] - self.min_rad) / (self.max_rad - self.min_rad) - 0.5
-                elem[1] = (elem[1] - self.min_trig) / (self.max_trig - self.min_trig) - 0.5
-                elem[2] = (elem[2] - self.min_trig) / (self.max_trig - self.min_trig) - 0.5
-            elif i in self.speed:
-                elem = (elem - self.min_speed) / (self.max_speed - self.min_speed)  # 0
-            elif i in self.relative_speed:
-                elem = (obs[self.speed[0]] - elem) / self.max_speed
-            elif i in self.distance:
-                elem = elem / 18000
-            elif i in self.angle_to_target:
-                elem = (elem - self.min_rad) / (self.max_rad - self.min_rad) - 0.5  # 3
-            elif i in self.target_speed:
-                continue
-                elem = elem / 1000
-            elif i in self.for_overload:
-                if i != 24:
-                    # print(elem)
-                    abs_max = 1.4
-                    # elem = np.hstack([elem, np.sign(elem)])
-                    # elem = (elem - (-abs_max))/(abs_max - (-abs_max)) - 0.5 #4
-                else:
-                    continue
-            # elif i in [36]:
-            #     elem = elem
-            else:
-                continue
+        minus = np.empty(len(obs))
+        div = np.empty(len(obs))
+        div.fill(1)
 
-            new_obs = np.hstack((new_obs, elem))  # Add embedings for manouver
+        minus[self.coordinates_values] = 0
+        minus[self.speed] = self.min_speed
+        minus[self.distance] = 0
+        minus[self.angle_to_target] = self.min_rad
+        minus[self.for_overload[0]] = 0
 
-        # assert np.alltrue(np.isclose(res, new_obs))
-        return new_obs.astype('float32')
+        div[self.coordinates_values] = 1000
+        div[self.speed] = self.max_speed - self.min_speed
+        div[self.distance] = 18000
+        div[self.angle_to_target] = (self.max_rad - self.min_rad)
+
+        angles = np.reshape([np.hstack([angle, np.array(self.transform_to_trigonometry(angle))])
+                             for angle in obs[self.angle_values]], -1)
+        rad_norm = self.max_rad - self.min_rad
+        trig_norm = self.max_trig - self.min_trig
+        angles[0:angles.shape[0]:3] = (angles[0:angles.shape[0]:3] - self.min_rad) / rad_norm - 0.5
+        angles[1:angles.shape[0]:3] = (angles[1:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
+        angles[2:angles.shape[0]:3] = (angles[2:angles.shape[0]:3] - self.min_trig) / trig_norm - 0.5
+
+        additional = (obs[self.relative_speed] - obs[self.target_speed[0]]) / self.max_speed
+
+        data_prep = ((obs - minus) / div)
+        data_prep[self.angle_to_target] -= 0.5
+
+        res = np.hstack([data_prep[all_index], angles, additional]).astype("float64")
+
+        reorder = [0, 1, 2, 11, 12, 13, 14, 15, 16, 17, 18, 19, 6, 29, 8, 10, 9,
+                   3, 4, 5, 20, 21, 22, 23, 24, 25, 26, 27, 28, 7]
+
+        res = res[reorder]
+        return res.astype("float32")
 
     def transform_to_trigonometry(self, angle):
         return [np.sin(angle), np.cos(angle)]
@@ -386,11 +316,15 @@ def getData(load_path="new_version_3l_aero_big_boy(4_1)/23500", distances=(10000
 
 
 def teachArch(num_games, network_structure, params):
+
+    network_structure = network_structure[:]
+    params = dict(params)
     main_stream, advantage_stream, value_stream = network_structure
     batch_size, mem_size, gamma, epsilon, lr, eps_min, decay, replace = \
         params["batch_size"], params["mem_size"], params["gamma"], params["epsilon"], \
         params["lr"], params["eps_min"], params["decay"], params["replace"]
 
+    print("Creating summary writer")
     tb = SummaryWriter(comment=f' neurons={main_stream[0].out_features}, '
                                f'main_layers={len(main_stream)}, '
                                f'advantage_layers={len(advantage_stream)}, '
@@ -408,7 +342,6 @@ def teachArch(num_games, network_structure, params):
 
     env.seed(seed=42)
     env = PreprocessiObs(env)
-    # env = OldPreprorcessor(env)
 
     state_shape = env.observation_space.shape[1]
     n_actions = env.action_space.n
@@ -428,6 +361,7 @@ def teachArch(num_games, network_structure, params):
     eps_history = []
     loss_history = []
 
+    print("Filling memory")
     while agent.memory.mem_cntr < mem_size:
         done = False
         observation = env.reset(**reset_params())
@@ -444,6 +378,7 @@ def teachArch(num_games, network_structure, params):
             observation = observation_
 
     for i in range(num_games):
+        print(f"{i}_{multiprocessing.current_process()}")
         done = False
         observation = env.reset(**reset_params())
         score = 0
@@ -481,9 +416,6 @@ def teachArch(num_games, network_structure, params):
         eps_history.append(agent.epsilon)
 
     tb.close()
-
-    # yappi.stop()
-    # yappi.get_func_stats().print_all()
 
 
 def networkParts(main_layers, advantage_layers, value_layers, neurons):
@@ -536,11 +468,11 @@ def profile(names, postfix="", printToFile=True):
         if gettrace():
             mode = 'debug'
 
-    stats = getDataAbout(names, file_name=f"{mode}_nonOptimized")
+    stats = getDataAbout(names)
 
     if printToFile:
         for sort_by in sort_list:
-            file_name = f"{mode}_nonOptimized_{sort_by}_{postfix}"
+            file_name = f"{mode}_Optimized_{sort_by}_{postfix}"
             if file_name:
                 with open(f"profile/{file_name}.txt", 'w') as f:
                     f.write(str(names))
@@ -555,8 +487,8 @@ if __name__ == '__main__':
 
     nn_params = list(product([3], [0], [1], [16]))
     # path = f"checkpoints/May27_15-23-45_MacBook-Pro-Evgenij.local neurons=16, main_layers=4, advantage_layers=0, value_layers=0, batch_size=128, mem_size=10000, gamma=0.999, epsilon=1, lr=1e-07, eps_min=0.05, decay=210000, replace=50/1125"
-    path = f"new_version_3l_aero_big_boy(4_1)/23500"
-    env, agent = testerGen(*networkParts(3, 0, 1, 16), path)
+    # path = f"new_version_3l_aero_big_boy(4_1)/23500"
+    # env, agent = testerGen(*networkParts(3, 0, 1, 16), path)
 
     # writeGameToFile(env, agent, reset_params(), False, 3)
 
@@ -571,25 +503,48 @@ if __name__ == '__main__':
         'torch',
         'numpy'
     ]
-
-    yappi.set_clock_type("cpu")
-    yappi.start()
-    teachArch(1, networkParts(3, 0, 1, 16), learning_params[0]) # 5
-    yappi.stop()
-
-    profiler_data = profile([], postfix="noNames")
-    # profile(names, postfix="withNames")
-
-    z = 0
+    # params = list(product_dict(batch_size=[64, 128, 256], mem_size=[5000], gamma=[0.999], epsilon=[1],
+    #                       lr=[1e-5, 1e-6, 1e-7], eps_min=[0.05], decay=[300 * 700], replace=[50]))[0]
+    #
+    # teachArch(50000, networkParts(3, 0, 1, 16), params)
 
 
 
+    # writeGameToFile(env, agent, reset_params(), False, 3)
+    # writeGameToFile(env, agent, reset_params(), True, 3)
+    #
+    # yappi.set_clock_type("cpu")
+    # yappi.start()
+    # teachArch(5, networkParts(3, 0, 1, 16), learning_params[0])  # 5
+    # yappi.stop()
+    #
+    # profiler_data = profile([], postfix="noNames", printToFile=True)
+    # profile(names, postfix="withNames", printToFile=True)
 
-    # with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
-    #     with multiprocessing.Manager() as manager:
-    #         multiple_results = []
-    #         for learning, (main, advantage, value, neurons) in product(learning_params, nn_params):
-    #             multiple_results.append(
-    #                 pool.apply_async(teachArch, args=(50000, networkParts(main, advantage, value, neurons), learning))
-    #             )
-    #         [async_res.wait() for async_res in multiple_results]
+    # z = 0
+
+    # yappi.set_clock_type("wall")
+    # yappi.start()
+
+
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        with multiprocessing.Manager() as manager:
+            multiple_results = []
+            for learning, (main, advantage, value, neurons) in product(learning_params, nn_params):
+                print("Start process")
+                multiple_results.append(
+                    pool.apply_async(teachArch, args=(50000, networkParts(main, advantage, value, neurons), learning))
+                )
+            [async_res.wait() for async_res in multiple_results]
+
+    # yappi.stop()
+    #
+    # threads = yappi.get_thread_stats()
+    # modules = [sys.modules.get(module_name) for module_name in names]
+    #
+    # for thread in threads:
+    #     yappi.get_func_stats(ctx_id=thread.id,
+    #                          filter_callback=lambda x: yappi.module_matches(x, modules)
+    #                          ).print_all()
+    #
+    # z = 0
