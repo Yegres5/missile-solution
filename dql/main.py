@@ -272,7 +272,7 @@ for i, net in enumerate(test_list):
     # t1.agent.load_state_dict(temp_agent.state_dict())
     t1.fill_buffer()
     t1.train(total_steps=20000, decay=3000,
-             save_folder=f"{os.getcwd()}/log/14/4/{net[0].in_features}")  # {int((len(net)-1)/2)}_{net[1].in_features}")
+             save_folder=f"{os.getcwd()}/log/15/4/{net[0].in_features}")  # {int((len(net)-1)/2)}_{net[1].in_features}")
 
 # 2 5
 
@@ -282,38 +282,45 @@ env = make_env(seed=seed, rocket_info=rocket_info, target_info=target_info)
 t = reset_params()
 # t["t_euler"][1] = -t["t_euler"][1]
 
-reward = 0
+
 env.reset(**t)
 log = np.array(env.get_obs)
 true_overload = np.empty(2)
+rewards = []
 
-for _ in range(800):
-    env.wrap.rocket.grav_compensate()
-    overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
-    if true_overload.shape[0] == 0:
-        true_overload = np.hstack((true_overload, overload))
-    else:
-        true_overload = np.vstack((true_overload, overload))
+for i in range(100):
+    reward = 0
+    for _ in range(800):
+        env.wrap.rocket.grav_compensate()
+        overload = env.wrap.rocket.proportionalCoefficients(k_z=10, k_y=10)
+        if true_overload.shape[0] == 0:
+            true_overload = np.hstack((true_overload, overload))
+        else:
+            true_overload = np.vstack((true_overload, overload))
 
-    possible = env.wrap.findClosestFromLegal(overload)
-    action_num = env.wrap.overloadsToNumber([possible])[0]
+        possible = env.wrap.findClosestFromLegal(overload)
+        action_num = env.wrap.overloadsToNumber([possible])[0]
 
-    # print("True = ", overload, "Possible = ", possible)
-    s = env.observation(env.get_obs)
-    s = torch.tensor(s, device=device, dtype=torch.float)
-    action_num = torch.argmax(agent(s))
+        # print("True = ", overload, "Possible = ", possible)
+        s = env.observation(env.get_obs)
+        s = torch.tensor(s, device=device, dtype=torch.float)
+        # action_num = torch.argmax(agent(s))
 
-    ob, r, done, info = env.step(action_num)
+        ob, r, done, info = env.step(action_num)
 
-    reward += r
-    print(r)
+        reward += r
+        # print(r)
 
-    log = np.vstack((log, env.get_obs))
-    print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
-    if done:
-        break
+        log = np.vstack((log, env.get_obs))
+        # print("Distance to target = ", env.wrap.distance_to_target, np.rad2deg(env.wrap.rocket.angleToTarget))
+        if done:
+            t = reset_params()
+            env.reset(**t)
+            break
 
-print("Reward = ", np.round(reward, 4))
+    print(f"{i} | Reward = {np.round(reward, 4)}")
+    rewards.append(reward)
+
 
 rocket_log = log[:, :26]
 la_log = log[:, 26:]

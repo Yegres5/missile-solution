@@ -56,9 +56,8 @@ class PreprocessiObs(ObservationWrapper):
                 continue
                 elem = elem / 1000
             elif i in self.for_overload:
-                continue
-                if i == 24:
-                    elem = np.round(elem, 3)
+                if i != 24:
+                    elem = np.round(elem, 4)
                 else:
                     continue
             else:
