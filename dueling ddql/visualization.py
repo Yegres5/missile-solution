@@ -2,10 +2,14 @@ import pandas
 import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
+import matplotlib as mpl
+
+from itertools import product
 from matplotlib import animation
 from math import floor
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import matplotlib as mpl
+from utils import static_vars
+
 
 def Gen_RandLine(length, dims=2):
     lineData = np.empty((dims, length))
@@ -19,13 +23,13 @@ def Gen_RandLine(length, dims=2):
 def update_lines(num, dataLines, lines, ax):
     for line, data in zip(lines, dataLines):
         delta = 5000.
-        x0 = dataLines[0][0,num]
-        y0 = dataLines[0][1,num]
-        z0 = dataLines[0][2,num]
-        
-        ax.set_xbound([-delta+x0, delta+x0])
-        ax.set_ybound([-delta+y0, delta+y0])
-        ax.set_zbound([-delta+z0, delta+z0])
+        x0 = dataLines[0][0, num]
+        y0 = dataLines[0][1, num]
+        z0 = dataLines[0][2, num]
+
+        ax.set_xbound([-delta + x0, delta + x0])
+        ax.set_ybound([-delta + y0, delta + y0])
+        ax.set_zbound([-delta + z0, delta + z0])
 
         line.set_data(data[0:2, :num])
         line.set_3d_properties(data[2, :num])
@@ -38,20 +42,20 @@ def drawAnimation():
     fig = plt.figure()
     ax = p3.Axes3D(fig)
 
-    #Turn off axis
+    # Turn off axis
     ax.set_axis_off()
 
-    #Create axes x y z
-    xspan, yspan, zspan = 3 * [np.linspace(0,20000,20)]
+    # Create axes x y z
+    xspan, yspan, zspan = 3 * [np.linspace(0, 20000, 20)]
     zero = np.zeros_like(xspan)
 
     ax.plot3D(xspan, zero, zero, 'k-.', linewidth=0.8)
     ax.plot3D(zero, yspan, zero, 'k-.', linewidth=0.8)
     ax.plot3D(zero, zero, zspan, 'k-.', linewidth=0.8)
 
-    ax.text(xspan.max() + 10, .5, .5, "Z", color='red', fontsize = 20)
-    ax.text(.5, yspan.max() + 10, .5, "X", color='red', fontsize = 20)
-    ax.text(.5, .5, zspan.max() + 10, "Y", color='red', fontsize = 20)
+    ax.text(xspan.max() + 10, .5, .5, "Z", color='red', fontsize=20)
+    ax.text(.5, yspan.max() + 10, .5, "X", color='red', fontsize=20)
+    ax.text(.5, .5, zspan.max() + 10, "Y", color='red', fontsize=20)
 
     # Getting CSV data
     column_names = ['x', 'y', 'z']
@@ -59,8 +63,7 @@ def drawAnimation():
     for i in range(2):
         list.append(pandas.read_csv("%d.csv" % (i), header=None))
 
-
-    #Creating arrays of data from CSV
+    # Creating arrays of data from CSV
     data = []
     for la in list:
         data.append(np.array(la.values).transpose())
@@ -69,14 +72,14 @@ def drawAnimation():
     # NOTE: Can't pass empty arrays into 3d version of plot()
     lines = [ax.plot(dat[2, 0:1], dat[0, 0:1], dat[1, 0:1])[0] for dat in data]
 
-    #X-Z Y-X Z-Y
+    # X-Z Y-X Z-Y
 
     # Setting the axes properties
     ax.set_xlabel('Z')
     ax.set_ylabel('X')
     ax.set_zlabel('Y')
 
-    #Setting x0 y0 z0
+    # Setting x0 y0 z0
     delta = 10000.
     x0 = 0
     y0 = 0
@@ -87,9 +90,9 @@ def drawAnimation():
     ax.set_zbound([-delta + z0, delta + z0])
 
     speed = 1
-    indexes = np.arange(floor(data[0].shape[1]/speed))*speed
-    if indexes[-1] != data[0].shape[1]-1:
-        indexes = np.hstack([indexes, np.array([data[0].shape[1]-1])])
+    indexes = np.arange(floor(data[0].shape[1] / speed)) * speed
+    if indexes[-1] != data[0].shape[1] - 1:
+        indexes = np.hstack([indexes, np.array([data[0].shape[1] - 1])])
 
     data = [d[:, indexes] for d in data]
 
@@ -100,8 +103,10 @@ def drawAnimation():
     plt.show(block=True)
 
 
-
-def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
+@static_vars(ALL_NAMES=["Score nonbin", "Score bin", "Distance", "Distance scaled",
+                        "Time", "Time if hit", "Speed", "Speed if hit", "PN vs NN Distance",
+                        "PN vs NN Distance diff", "PN vs NN Accuracy", "Fancy", "PN vs NN Fancy"])
+def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin", save_path=None):
     fig, ax = plt.subplots()
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.05)
@@ -124,12 +129,15 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
 
     if graphType == "Score nonbin":  # nope
         scores = stats[indexes, 1].astype("float64")
+
     if graphType == "Score bin":
         scores = stats[indexes, 1].astype("float64")
         scores[scores < 0] = 0
+
     elif graphType == "Distance":  # nope
         scores = [i["Distance"] for i in stats[indexes, 3]]
         min_score, max_score = 100, 1000
+
     elif graphType == "Distance scaled":
         cmap = mpl.cm.coolwarm
         scores = np.array([i["Distance"] for i in stats[indexes, 3]], dtype=np.float)
@@ -137,31 +145,36 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
         j, c, i, q = -1 / 2, 1000, 1500, -2
         scores = j * (np.tanh(1 / c * (scores - i)) + (q + 1))
         min_score, max_score = 0, 1
+
     elif graphType == "Time":
         scores = stats[indexes, 2].astype("float64")
+
     elif graphType == "Time if hit":
         scores = stats[indexes, 2].astype("float64")
         scores[hit_or_miss == 0] = 600
+
     elif graphType == "Speed":
         scores = np.array([i["Final speed"] for i in stats[indexes, 3]])
         min_score, max_score = 200, 900
+
     elif graphType == "Speed if hit":
         scores = np.array([i["Final speed"] for i in stats[indexes, 3]])
         scores = scores * hit_or_miss
         min_score, max_score = 200, 900
+
     elif graphType == "PN vs NN Distance":  # nope
         pn_dist = [i["Distance"] for i in stats[indexes, 3]]
         nn_dist = [i["Distance"] for i in stats[indexes_neural, 3]]
         scores = [1 if nn_d < pn_d else 0 for pn_d, nn_d in zip(pn_dist, nn_dist)]
+
     elif graphType == "PN vs NN Distance diff":
         pn_dist = np.array([i["Distance"] for i in stats[indexes, 3]])
         nn_dist = np.array([i["Distance"] for i in stats[indexes_neural, 3]])
 
         scores = nn_dist - pn_dist
-        scores = 1 / scores
-        # min_score, max_score = -2000, 2000
 
     elif graphType == "PN vs NN Accuracy":
+        min_score, max_score = 0, 100
         cmap = mpl.cm.brg
 
         pn_score = stats[indexes, 1].astype("float64")
@@ -177,9 +190,7 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
                 score = 60
             elif pn_d > 0 and nn_d > 0:
                 score = 100
-
             scores.append(score)
-        min_score, max_score = 0, 100
 
     elif graphType == "Fancy":
         cmap = mpl.cm.hot
@@ -190,6 +201,7 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
         min_score, max_score = 0, 3
 
     elif graphType == "PN vs NN Fancy":
+        min_score, max_score = 0, 500
         cmap = mpl.cm.gist_ncar
 
         pn_score = stats[indexes, 1].astype("float64")
@@ -220,15 +232,28 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin"):
                     score = 50  # blue
             scores.append(score)
 
-        min_score, max_score = 0, 500
-
     if not (min_score or max_score):
         min_score, max_score = min(scores), max(scores)
-
     norm = mpl.colors.Normalize(vmin=min_score, vmax=max_score)
-
     im = ax.hist2d(angles, distances, weights=scores, norm=norm, cmap=cmap,
                    bins=[len(set(angles)), len(set(distances))])
 
     fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
                  cax=cax, orientation='vertical')
+
+    if save_path:
+        plt.savefig(f"{save_path}.svg", format="svg")
+        plt.close()
+
+
+def printAllGraphs(data):
+    maneuvers, coefficients = set([infos["maneuver"] for infos in data[:, 0]]), \
+                              set([infos["coefficient"] for infos in data[:, 0]])
+
+    for maneuver, coefficient in product(maneuvers, coefficients):
+        for graphName in drawAccuracy.ALL_NAMES:
+            prefix = graphName.replace(" ", "_")
+            file_name = f"graphs/big_boy/{prefix} maneuver={maneuver} coefficient={coefficient}"
+
+            drawAccuracy(stats=data, maneuver=maneuver, coefficient=coefficient, graphType=graphName,
+                         save_path=file_name)
