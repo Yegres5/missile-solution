@@ -2,12 +2,19 @@ import gym
 import multiprocessing
 import os
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 from torch.utils.tensorboard import SummaryWriter
 from itertools import product
 from dueling_ddqn_torch import Agent
 from utils import PreprocessObs, reset_params, product_dict, networkParts, getData, testerGen
-from visualization import drawAccuracy, printAllGraphs, drawAnimation
+from visualization import drawAccuracy, printAllGraphs, drawAnimation, draw2DAnimation, Animation
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
 
 def play(env, agent, ini, expert=False, exp_coeff=5):
     score = 0
@@ -16,7 +23,7 @@ def play(env, agent, ini, expert=False, exp_coeff=5):
     observation = env.reset(**ini)
     overload_log = []
     speed_log = []
-    coord_log = [observation[[0, 1, 2, 17, 18, 19]] * 10000]
+    coord_log = [observation[[0, 1, 2, 17, 18, 19]] * 1000]
 
     while not done:
         steps += 1
@@ -35,7 +42,7 @@ def play(env, agent, ini, expert=False, exp_coeff=5):
 
         overload_log.append(env.wrap.numberToOverloads(action)[0])
         speed_log.append(env.wrap.rocketSpeed)
-        coord_log.append(observation[[0, 1, 2, 17, 18, 19]] * 10000)
+        coord_log.append(observation[[0, 1, 2, 17, 18, 19]] * 1000)
 
     info.update({"Speed log": np.array(speed_log),
                  "Overload log": np.array(overload_log),
@@ -80,7 +87,6 @@ def writeGameToFile(env, agent, init, expert=False, exp_coef=5):
 
 
 def teachArch(num_games, network_structure, params):
-
     network_structure = network_structure[:]
     params = dict(params)
     main_stream, advantage_stream, value_stream = network_structure
@@ -141,7 +147,7 @@ def teachArch(num_games, network_structure, params):
 
             observation = observation_
 
-    for i in range(num_games):
+    for i in tqdm(range(num_games)):
         done = False
         observation = env.reset(**reset_params())
         score = 0
@@ -174,39 +180,106 @@ def teachArch(num_games, network_structure, params):
     tb.close()
 
 
-if __name__ == '__main__':
-    data = getData(nn_template=networkParts(3, 0, 1, 16), distances=(10000, 30000, 100),
-                   angles=(-90, 90, 1),
-                   maneuvers=tuple([0, 1, 2, 3, 4]), coefficients=tuple([0, 1, 3, 5]))
-    printAllGraphs(data)
+def getIndexList(data, coefficients, maneuvers):
+    res = {}
+    for coefficient, maneuver in product(coefficients, maneuvers):
+        c_index = np.array([i["coefficient"] == coefficient for i in data[:, 0]])
+        m_index = np.array([i["maneuver"] == maneuver for i in data[:, 0]])
+        res[(maneuver, coefficient)] = c_index & m_index
 
-    # learning_params = list(product_dict(batch_size=[64], mem_size=[2500, 5000], gamma=[0.999], epsilon=[1],
-    #                                     lr=[1e-5], eps_min=[0.05], decay=[300 * 700], replace=[50]))
+    return res
+
+
+def limitedData(data, euler_limits, coord_limits):
+    angle_indexes = np.array(
+        [np.deg2rad(euler_limits[0]) <= i["t_euler"][1] <= np.deg2rad(euler_limits[1]) for i in data[:, 0]])
+    coord_indexes = np.array([coord_limits[0] <= i["la_coord"][0] <= coord_limits[1] for i in data[:, 0]])
+    return data[angle_indexes & coord_indexes]
+
+
+if __name__ == '__main__':
+    # data = getData(nn_template=networkParts(3, 0, 1, 16), distances=(18000, 30000, 100),
+    #                angles=(-60, 60, 2),
+    #                maneuvers=tuple([4]), coefficients=[0])
+    # names = ['Speed log', 'Overload log', 'Coord log']
+    # for elems in data[:,3]:
+    #     for name in names:
+    #         del elems[name]
     #
-    # nn_params = list(product([3], [0], [1], [16]))
+    # with open("dump.npy", "wb") as f:
+    #     np.save(f, data)
+
+    # path = f"new_version_3l_aero_big_boy(4_1)/23500"
+    # env, agent = testerGen(*networkParts(3, 0, 1, 16), path)
+    # ini = reset_params()
+    # ini["la_coord"][0] = 15000
+    # ini["t_euler"][1] = np.deg2rad(45)
+    # ini["maneuver"] = 4
+    #
+    #
+    # log = play(env, agent, ini, True, 1)
+    #
+    # draw2DAnimation(log)
+    # animator = Animation(log)
+    # animator.startAnimation(100)
+    #
+    #
+    # with open("dumpOriginal.npy", "rb") as f:
+    #     data = np.load(f, allow_pickle=True)
+    # #
+    # # printAllGraphs(data)
+    #
+    # maneuvers = set([info["maneuver"] for info in data[:, 0]])
+    # coefficients = set([info["coefficient"] for info in data[:, 0]])
+    # limited = limitedData(data, (-60, 60), (18000, 25000))
+    # indexList = getIndexList(limited, coefficients, maneuvers)
+    # #
+    # # printAllGraphs(limited)
+    # #
+    # stats = []
+    # for cond, indexes in indexList.items():
+    #     # m_score = np.mean(limited[indexes, 1])
+    #     m_distance = np.mean([i["Distance"] for i in limited[indexes, 3]])
+    #     m_accuracy = np.mean([i["Destroyed"] for i in limited[indexes, 3]])
+    #     m_speed = np.mean([i["Final speed"] for i in limited[indexes, 3]])
+    #     m_time = np.mean(limited[indexes, 2])
+    #
+    #     stats.append([cond[0], cond[1], m_distance, m_accuracy, m_speed, m_time])
+    #
+    # pd_stats = pd.DataFrame(stats, columns=["Вид маневра", "Коэффициент", "Дальность", "Точность",
+    #                                         "Финальная скорость", "Время наведения"])
+    # pd_stats.sort_values(by=["Вид маневра", "Коэффициент"])
+    # pd_stats["Вид маневра"] += 1
+    # pd_stats["Время наведения"] /= 10
+    #
+    # replace_v = {0: "Нейронная сеть"}
+    # pd_stats.sort_values(by=["Вид маневра", "Коэффициент"]).replace({"Коэффициент": replace_v}).T.to_excel("output.xlsx")
+    #
+    # z = 0
+
+    learning_params = list(product_dict(batch_size=[64], mem_size=[2500, 5000], gamma=[0.999], epsilon=[1],
+                                        lr=[1e-5], eps_min=[0.05], decay=[300 * 700], replace=[50]))
+    nn_params = list(product([3], [0], [1], [16]))
+
     # path = f"checkpoints/May27_15-23-45_MacBook-Pro-Evgenij.local neurons=16, main_layers=4, advantage_layers=0, value_layers=0, batch_size=128, mem_size=10000, gamma=0.999, epsilon=1, lr=1e-07, eps_min=0.05, decay=210000, replace=50/1125"
     # path = f"new_version_3l_aero_big_boy(4_1)/23500"
     # env, agent = testerGen(*networkParts(3, 0, 1, 16), path)
-
+    #
     # writeGameToFile(env, agent, reset_params(), False, 3)
 
-    # missile_env.envs.flying_objects.ALL_POSSIBLE_ACTIONS
+    names = [
+        '__main__',
+        'missile_env.envs.flying_objects',
+        'missile_env.envs.missileenv_0',
+        'missile_env.envs.wrapper',
+        'dueling_ddqn_torch',
+        'torch',
+        'numpy'
+    ]
+    params = list(product_dict(batch_size=[64, 128, 256], mem_size=[5000], gamma=[0.999], epsilon=[1],
+                               lr=[1e-5, 1e-6, 1e-7], eps_min=[0.05], decay=[300 * 700], replace=[50]))[0]
 
-    # names = [
-    #     '__main__',
-    #     'missile_env.envs.flying_objects',
-    #     'missile_env.envs.missileenv_0',
-    #     'missile_env.envs.wrapper',
-    #     'dueling_ddqn_torch',
-    #     'torch',
-    #     'numpy'
-    # ]
-    # params = list(product_dict(batch_size=[64, 128, 256], mem_size=[5000], gamma=[0.999], epsilon=[1],
-    #                       lr=[1e-5, 1e-6, 1e-7], eps_min=[0.05], decay=[300 * 700], replace=[50]))[0]
-    #
-    # teachArch(50000, networkParts(3, 0, 1, 16), params)
-
-
+    teachArch(50000, networkParts(3, 0, 1, 16), params)
 
     # writeGameToFile(env, agent, reset_params(), False, 3)
     # writeGameToFile(env, agent, reset_params(), True, 3)
@@ -219,20 +292,17 @@ if __name__ == '__main__':
     # profiler_data = profile([], postfix="noNames", printToFile=True)
     # profile(names, postfix="withNames", printToFile=True)
 
-    # z = 0
-
     # yappi.set_clock_type("wall")
     # yappi.start()
 
-
-    # with multiprocessing.Pool(processes=2) as pool:
-    #     with multiprocessing.Manager() as manager:
-    #         multiple_results = []
-    #         for learning, (main, advantage, value, neurons) in product(learning_params, nn_params):
-    #             multiple_results.append(
-    #                 pool.apply_async(teachArch, args=(50000, networkParts(main, advantage, value, neurons), learning))
-    #             )
-    #         [async_res.wait() for async_res in multiple_results]
+    with multiprocessing.Pool(processes=2) as pool:
+        with multiprocessing.Manager() as manager:
+            multiple_results = []
+            for learning, (main, advantage, value, neurons) in product(learning_params, nn_params):
+                multiple_results.append(
+                    pool.apply_async(teachArch, args=(50000, networkParts(main, advantage, value, neurons), learning))
+                )
+            [async_res.wait() for async_res in multiple_results]
 
     # yappi.stop()
     #
@@ -243,5 +313,3 @@ if __name__ == '__main__':
     #     yappi.get_func_stats(ctx_id=thread.id,
     #                          filter_callback=lambda x: yappi.module_matches(x, modules)
     #                          ).print_all()
-    #
-    # z = 0

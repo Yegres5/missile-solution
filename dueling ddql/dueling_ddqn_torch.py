@@ -1,18 +1,18 @@
 import os
 import numpy as np
-import torch as T
+import torch as torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
-class ReplayBuffer():
+
+class ReplayBuffer:
     def __init__(self, max_size, input_shape):
         self.mem_size = max_size
         self.mem_cntr = 0
         self.state_memory = np.zeros((self.mem_size, *input_shape),
-                                    dtype=np.float32)
+                                     dtype=np.float32)
         self.new_state_memory = np.zeros((self.mem_size, *input_shape),
-                                        dtype=np.float32)
+                                         dtype=np.float32)
         self.action_memory = np.zeros(self.mem_size, dtype=np.int64)
         self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
         self.terminal_memory = np.zeros(self.mem_size, dtype=bool)
@@ -38,6 +38,7 @@ class ReplayBuffer():
 
         return states, actions, rewards, states_, terminal
 
+
 class DuelingDeepQNetwork(nn.Module):
     def __init__(self, lr, n_actions, name, input_dims, chkpt_dir, main_stream, advantage_stream, value_stream):
         super(DuelingDeepQNetwork, self).__init__()
@@ -51,7 +52,8 @@ class DuelingDeepQNetwork(nn.Module):
             *main_stream
         )
 
-        value_last_neurons = advantage_stream[-2].out_features if len(advantage_stream) else main_stream[-2].out_features
+        value_last_neurons = advantage_stream[-2].out_features if len(advantage_stream) else main_stream[
+            -2].out_features
         self.value_stream = nn.Sequential(
             *advantage_stream,
             nn.Linear(value_last_neurons, 1),
@@ -65,7 +67,7 @@ class DuelingDeepQNetwork(nn.Module):
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
-        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
 
     def forward(self, state):
@@ -73,30 +75,25 @@ class DuelingDeepQNetwork(nn.Module):
 
         V = self.value_stream(res)
         A = self.advantage_stream(res)
-        # flat1 = F.relu(self.fc1(state))
-        # flat2 = F.relu(self.fc2(flat1))
-        # flat3 = F.relu(self.fc3(flat2))
-        # flat4 = F.relu(self.fc4(flat3))
-        # V = self.V(flat4)
-        # A = self.A(flat4)
 
         return V, A
 
     def save_checkpoint(self, filename):
         print('... saving checkpoint ...')
         if not filename:
-            T.save(self.state_dict(), os.path.join(os.getcwd(), self.checkpoint_file))
+            torch.save(self.state_dict(), os.path.join(os.getcwd(), self.checkpoint_file))
         else:
-            T.save(self.state_dict(), os.path.join(os.getcwd(), filename))
+            torch.save(self.state_dict(), os.path.join(os.getcwd(), filename))
 
     def load_checkpoint(self, filename):
         print('... loading checkpoint ...')
         if not filename:
-            self.load_state_dict(T.load(self.checkpoint_file))
+            self.load_state_dict(torch.load(self.checkpoint_file))
         else:
-            self.load_state_dict(T.load(filename))
+            self.load_state_dict(torch.load(filename))
 
-class Agent():
+
+class Agent:
     def __init__(self, gamma, epsilon, lr, n_actions, input_dims,
                  mem_size, batch_size, main_stream, advantage_stream, value_stream,
                  eps_min=0.01, eps_dec=5e-7,
@@ -114,25 +111,27 @@ class Agent():
         self.action_space = [i for i in range(self.n_actions)]
         self.learn_step_counter = 0
 
-        self.memory = ReplayBuffer(mem_size, input_dims)#, n_actions)
+        self.memory = ReplayBuffer(mem_size, input_dims)  # , n_actions)
 
         self.q_eval = DuelingDeepQNetwork(self.lr, self.n_actions,
-                                   input_dims=self.input_dims,
-                                   name='lunar_lander_dueling_ddqn_q_eval',
-                                   chkpt_dir=self.chkpt_dir,
-                                    main_stream=main_stream, advantage_stream=advantage_stream, value_stream=value_stream)
+                                          input_dims=self.input_dims,
+                                          name='lunar_lander_dueling_ddqn_q_eval',
+                                          chkpt_dir=self.chkpt_dir,
+                                          main_stream=main_stream, advantage_stream=advantage_stream,
+                                          value_stream=value_stream)
 
         self.q_next = DuelingDeepQNetwork(self.lr, self.n_actions,
-                                   input_dims=self.input_dims,
-                                   name='lunar_lander_dueling_ddqn_q_next',
-                                   chkpt_dir=self.chkpt_dir,
-                                          main_stream=main_stream, advantage_stream=advantage_stream, value_stream=value_stream)
+                                          input_dims=self.input_dims,
+                                          name='lunar_lander_dueling_ddqn_q_next',
+                                          chkpt_dir=self.chkpt_dir,
+                                          main_stream=main_stream, advantage_stream=advantage_stream,
+                                          value_stream=value_stream)
 
     def choose_action(self, observation):
         if np.random.random() > self.epsilon:
-            state = T.tensor([observation], dtype=T.float).to(self.q_eval.device)
+            state = torch.tensor([observation], dtype=torch.float).to(self.q_eval.device)
             value, advantage = self.q_eval.forward(state)
-            action = T.argmax(advantage).item()
+            action = torch.argmax(advantage).item()
             # action = T.argmax(value + advantage - advantage.mean()).item()
         else:
             action = np.random.choice(self.action_space)
@@ -148,15 +147,15 @@ class Agent():
 
     def decrement_epsilon(self):
         self.epsilon = self.epsilon - self.eps_dec \
-                        if self.epsilon > self.eps_min else self.eps_min
+            if self.epsilon > self.eps_min else self.eps_min
 
     def save_models(self, filename=""):
-        self.q_eval.save_checkpoint(filename+"_q_eval")
-        self.q_next.save_checkpoint(filename+"_q_next")
+        self.q_eval.save_checkpoint(filename + "_q_eval")
+        self.q_next.save_checkpoint(filename + "_q_next")
 
     def load_models(self, filename=""):
-        self.q_eval.load_checkpoint(filename+"_q_eval")
-        self.q_next.load_checkpoint(filename+"_q_next")
+        self.q_eval.load_checkpoint(filename + "_q_eval")
+        self.q_next.load_checkpoint(filename + "_q_next")
 
     def learn(self):
         if self.memory.mem_cntr < self.batch_size:
@@ -167,13 +166,13 @@ class Agent():
         self.replace_target_network()
 
         state, action, reward, new_state, done = \
-                                self.memory.sample_buffer(self.batch_size)
+            self.memory.sample_buffer(self.batch_size)
 
-        states = T.tensor(state).to(self.q_eval.device)
-        rewards = T.tensor(reward).to(self.q_eval.device)
-        dones = T.tensor(done).to(self.q_eval.device)
-        actions = T.tensor(action).to(self.q_eval.device)
-        states_ = T.tensor(new_state).to(self.q_eval.device)
+        states = torch.tensor(state).to(self.q_eval.device)
+        rewards = torch.tensor(reward).to(self.q_eval.device)
+        dones = torch.tensor(done).to(self.q_eval.device)
+        actions = torch.tensor(action).to(self.q_eval.device)
+        states_ = torch.tensor(new_state).to(self.q_eval.device)
 
         indices = np.arange(self.batch_size)
 
@@ -182,17 +181,17 @@ class Agent():
 
         V_s_eval, A_s_eval = self.q_eval.forward(states_)
 
-        q_pred = T.add(V_s,
-                        (A_s - A_s.mean(dim=1, keepdim=True)))[indices, actions]
-        q_next = T.add(V_s_,
-                        (A_s_ - A_s_.mean(dim=1, keepdim=True)))
+        q_pred = torch.add(V_s,
+                           (A_s - A_s.mean(dim=1, keepdim=True)))[indices, actions]
+        q_next = torch.add(V_s_,
+                           (A_s_ - A_s_.mean(dim=1, keepdim=True)))
 
-        q_eval = T.add(V_s_eval, (A_s_eval - A_s_eval.mean(dim=1,keepdim=True)))
+        q_eval = torch.add(V_s_eval, (A_s_eval - A_s_eval.mean(dim=1, keepdim=True)))
 
-        max_actions = T.argmax(q_eval, dim=1)
+        max_actions = torch.argmax(q_eval, dim=1)
 
         q_next[dones] = 0.0
-        q_target = rewards + self.gamma*q_next[indices, max_actions]
+        q_target = rewards + self.gamma * q_next[indices, max_actions]
 
         loss = self.q_eval.loss(q_target, q_pred).to(self.q_eval.device)
         loss.backward()

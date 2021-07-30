@@ -3,7 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
+from matplotlib import gridspec
 from itertools import product
 from matplotlib import animation
 from math import floor
@@ -35,6 +38,107 @@ def update_lines(num, dataLines, lines, ax):
         line.set_3d_properties(data[2, :num])
         # if np.allclose(data, dataLines[-1])
     return lines
+
+
+class Animation():
+    def __init__(self, data):
+        # self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3)
+        self.fig = plt.figure()
+        # self.ax1 = plt.subplot2grid((2, 4), (0, 0), rowspan=2, colspan=2)
+        # self.ax2 = plt.subplot2grid((2, 4), (0, 2), rowspan=1, colspan=2)
+        # self.ax3 = plt.subplot2grid((2, 4), (1, 2), rowspan=2, colspan=2)
+
+        AX = gridspec.GridSpec(2, 4)
+        AX.update(wspace=0.5, hspace=0.5)
+        self.ax1 = plt.subplot(AX[:, 0:2])
+        self.ax2 = plt.subplot(AX[0, 2:])
+        self.ax3 = plt.subplot(AX[1, 2:])
+
+        self.ax2.title.set_text("Зависимость скорости от времени")
+        self.ax3.title.set_text("Зависимость перегрузки от времени")
+        self.ax2.set_ylabel('Скорость')
+        self.ax2.set_xlabel('Время')
+        self.ax3.set_ylabel('Перегрузка')
+        self.ax3.set_xlabel('Время')
+
+        self.data = data
+        self.coords = data[2]["Coord log"][:, [0, 2, 3, 5]]
+        self.over = data[2]["Overload log"]
+        self.spd = data[2]["Speed log"]
+        self.timeLine = np.arange(0.1, len(self.over) / 10 + 0.1, 0.1)
+        self.min_v, self.max_v = np.min(self.coords), np.max(self.coords)
+        self.min_t, self.max_t = 0, np.ceil(np.max(self.timeLine)/10)*10
+        self.min_spd, self.max_spd = np.round(min(self.spd), -1), np.round(max(self.spd), -1)
+        self.min_over, self.max_over = min(self.over), max(self.over)
+
+        self.ax1.set_xlim(self.min_v, self.max_v)
+        self.ax1.set_ylim(self.min_v, self.max_v)
+        self.ax2.set_xlim(self.min_t - 1, self.max_t)
+        self.ax2.set_ylim(self.min_spd - 10, self.max_spd + 10)
+        self.ax3.set_xlim(self.min_t - 1, self.max_t + 1)
+        self.ax3.set_ylim(self.min_over - 1, self.max_over + 1)
+
+        self.ax2.yaxis.set_ticks(np.linspace(np.round(self.min_spd), np.round(self.max_spd), 5, endpoint=True))
+        self.ax2.xaxis.set_ticks(np.linspace(np.round(self.min_t), np.round(self.max_t), 11, endpoint=True))
+        self.ax3.yaxis.set_ticks(np.linspace(np.ceil(self.min_over), np.floor(self.max_over), 5, endpoint=True))
+        self.ax3.xaxis.set_ticks(np.linspace(np.round(self.min_t), np.round(self.max_t), 11, endpoint=True))
+
+        self.rocket = self.ax1.plot([self.coords[0, 0], self.coords[0, 1]])[0]
+        self.la = self.ax1.plot([self.coords[0, 2], self.coords[0, 3]])[0]
+
+        self.overload = self.ax3.plot([self.timeLine[0], self.over[0]])[0]
+
+        self.speed = self.ax2.plot([self.timeLine[0], self.spd[0]])[0]
+        # self.ax1.plot([-40000, 40000], [0, 0], 'k-.', linewidth=0.3)
+        # self.ax1.plot([0, 0], [-40000, 40000], 'k-.', linewidth=0.3)
+
+    def animate(self, i):
+        self.rocket.set_data(self.coords[:i, 0], self.coords[:i, 1])
+        self.la.set_data(self.coords[:i, 2], self.coords[:i, 3])
+
+        self.overload.set_data(self.timeLine[:i], self.over[:i])
+        self.speed.set_data(self.timeLine[:i], self.spd[:i])
+
+        if i != 0 and i < self.coords.shape[0]:
+            new_x_min = min(self.coords[i - 1, [0, 2]])
+            new_x_max = max(self.coords[i - 1, [0, 2]])
+            x_center = np.mean([new_x_min, new_x_max])
+
+            diff_x = abs(self.max_v - new_x_min)
+
+            new_y_min = min(self.coords[i - 1, [1, 3]])
+            new_y_max = max(self.coords[i - 1, [1, 3]])
+            diff_y = abs(self.max_v - new_x_min)
+            y_center = np.mean([new_y_min, new_y_max])
+
+            max_diff = max([diff_y, diff_x])
+
+            # self.ax1.set_xlim(x_center - max_diff / 2 - 5000, x_center + max_diff / 2 + 5000)
+            # self.ax1.set_ylim(y_center - max_diff / 2 - 5000, y_center + max_diff / 2 + 5000)
+
+            self.ax1.set_xlim(0, 25000)
+            self.ax1.set_ylim(-10000, 10000)
+
+    def startAnimation(self, interval=1000):
+        ani = animation.FuncAnimation(self.fig, self.animate, interval=3, frames=600, repeat=True)
+        plt.show()
+
+
+def draw2DAnimation(data):
+    # fig, (ax1, ax2) = plt.subplots(2)
+    coords = data[2]["Coord log"][:, [0, 2, 3, 5]] / 10
+    over = data[2]["Overload log"]
+    spd = data[2]["Speed log"]
+
+    # timeLine = np.arange(0.1, len(over)/10+0.1, 0.1)
+    #
+    # ax1.plot(timeLine, spd)
+    #
+    # ax2.plot(timeLine, over)
+
+    fig, ax = plt.figure()
+
+    return
 
 
 def drawAnimation():
@@ -165,12 +269,15 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin", save_pa
     elif graphType == "PN vs NN Distance":  # nope
         pn_dist = [i["Distance"] for i in stats[indexes, 3]]
         nn_dist = [i["Distance"] for i in stats[indexes_neural, 3]]
+        if not len(nn_dist):
+            return
         scores = [1 if nn_d < pn_d else 0 for pn_d, nn_d in zip(pn_dist, nn_dist)]
 
     elif graphType == "PN vs NN Distance diff":
         pn_dist = np.array([i["Distance"] for i in stats[indexes, 3]])
         nn_dist = np.array([i["Distance"] for i in stats[indexes_neural, 3]])
-
+        if not len(nn_dist):
+            return
         scores = nn_dist - pn_dist
 
     elif graphType == "PN vs NN Accuracy":
@@ -179,6 +286,8 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin", save_pa
 
         pn_score = stats[indexes, 1].astype("float64")
         nn_score = stats[indexes_neural, 1].astype("float64")
+        if not len(nn_score):
+            return
 
         scores = []
         for pn_d, nn_d in zip(pn_score, nn_score):
@@ -206,6 +315,8 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin", save_pa
 
         pn_score = stats[indexes, 1].astype("float64")
         nn_score = stats[indexes_neural, 1].astype("float64")
+        if not len(nn_score):
+            return
 
         speed = np.array([i["Final speed"] for i in stats[indexes, 3]])
         time = stats[indexes, 2].astype("float64")
@@ -235,14 +346,33 @@ def drawAccuracy(stats, maneuver, coefficient, graphType="Score nonbin", save_pa
     if not (min_score or max_score):
         min_score, max_score = min(scores), max(scores)
     norm = mpl.colors.Normalize(vmin=min_score, vmax=max_score)
-    im = ax.hist2d(angles, distances, weights=scores, norm=norm, cmap=cmap,
-                   bins=[len(set(angles)), len(set(distances))])
+
+    nr = len(set(distances))#50
+    ntheta = len(set(angles))#200
+    r_edges = np.linspace(min(distances), max(distances), nr + 1)
+    theta_edges = np.linspace(-np.pi/2, np.pi/2, ntheta + 1)
+    H, _, _ = np.histogram2d(distances, np.deg2rad(angles), [r_edges, theta_edges], weights=scores)
+
+    # Plot
+    ax = plt.subplot(111, polar=True)
+    Theta, R = np.meshgrid(theta_edges, r_edges)
+    ax.pcolormesh(Theta, R, H, norm=norm, cmap=cmap)
+    # plt.show()
+
+    # im = ax.hist2d(angles, distances, weights=scores, norm=norm, cmap=cmap,
+    #                bins=[len(set(angles)), len(set(distances))])
 
     fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
                  cax=cax, orientation='vertical')
 
+    ax.set_theta_zero_location("N")
+    ax.set_thetamin(90)
+    ax.set_thetamax(-90)
+
+    # z = 0
+
     if save_path:
-        plt.savefig(f"{save_path}.svg", format="svg")
+        plt.savefig(f"{save_path}.png", format="png")
         plt.close()
 
 
@@ -253,7 +383,7 @@ def printAllGraphs(data):
     for maneuver, coefficient in product(maneuvers, coefficients):
         for graphName in drawAccuracy.ALL_NAMES:
             prefix = graphName.replace(" ", "_")
-            file_name = f"graphs/big_boy/{prefix} maneuver={maneuver} coefficient={coefficient}"
+            file_name = f"graphs/big_boy/{prefix} maneuver={maneuver} coefficient={np.round(float(coefficient), 1)}"
 
             drawAccuracy(stats=data, maneuver=maneuver, coefficient=coefficient, graphType=graphName,
                          save_path=file_name)
