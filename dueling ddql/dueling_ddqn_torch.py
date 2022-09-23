@@ -52,8 +52,9 @@ class DuelingDeepQNetwork(nn.Module):
             *main_stream
         )
 
-        value_last_neurons = advantage_stream[-2].out_features if len(advantage_stream) else main_stream[
-            -2].out_features
+        value_last_neurons = advantage_stream[-2].out_features if len(advantage_stream) else \
+            main_stream[-2].out_features
+
         self.value_stream = nn.Sequential(
             *advantage_stream,
             nn.Linear(value_last_neurons, 1),
@@ -111,7 +112,7 @@ class Agent:
         self.action_space = [i for i in range(self.n_actions)]
         self.learn_step_counter = 0
 
-        self.memory = ReplayBuffer(mem_size, input_dims)  # , n_actions)
+        self.memory = ReplayBuffer(mem_size, input_dims)
 
         self.q_eval = DuelingDeepQNetwork(self.lr, self.n_actions,
                                           input_dims=self.input_dims,
@@ -132,7 +133,6 @@ class Agent:
             state = torch.tensor([observation], dtype=torch.float).to(self.q_eval.device)
             value, advantage = self.q_eval.forward(state)
             action = torch.argmax(advantage).item()
-            # action = T.argmax(value + advantage - advantage.mean()).item()
         else:
             action = np.random.choice(self.action_space)
 
